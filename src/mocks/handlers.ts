@@ -1,11 +1,14 @@
 import { http, HttpResponse } from 'msw'
-import type { Project, Agent } from './data'
+import type { Project, Agent, Provider, Model, ModelSettings } from './data'
 import {
   agents as initialAgents,
   assets,
   chapters,
+  defaultModelSettings,
   files,
+  llmModels,
   projects as initialProjects,
+  providers as initialProviders,
   promptTemplates,
   shotDetails,
   shots,
@@ -15,6 +18,9 @@ import {
 // 可变的项目列表，支持创建/编辑/删除（会话内生效）
 let projectsList: Project[] = [...initialProjects]
 let agentsList: Agent[] = [...initialAgents]
+let providersList: Provider[] = [...initialProviders]
+let modelsList: Model[] = [...llmModels]
+let modelSettingsStore: ModelSettings = { ...defaultModelSettings }
 
 function nextProjectId(): string {
   const max = projectsList.reduce((m, p) => {
@@ -191,6 +197,123 @@ export const handlers = [
     if (idx === -1) return HttpResponse.json({ message: 'Agent 不存在' }, { status: 404 })
     agentsList = agentsList.filter((a) => a.id !== id)
     return new HttpResponse(null, { status: 204 })
+  }),
+
+  // 供应商列表
+  http.get('/api/models/providers', () => {
+    return HttpResponse.json(providersList, { status: 200 })
+  }),
+  http.get('/api/models/providers/:id', ({ params }) => {
+    const { id } = params as { id: string }
+    const p = providersList.find((x) => x.id === id)
+    if (!p) return HttpResponse.json({ message: '供应商不存在' }, { status: 404 })
+    return HttpResponse.json(p, { status: 200 })
+  }),
+  http.post('/api/models/providers', async ({ request }) => {
+    const body = (await request.json()) as Partial<Provider> & { name: string; baseUrl: string }
+    const id = `prov${Date.now()}`
+    const now = new Date().toISOString().slice(0, 10)
+    const newP: Provider = {
+      id,
+      name: body.name ?? '未命名',
+      baseUrl: body.baseUrl ?? '',
+      apiKey: body.apiKey ?? '',
+      apiSecret: body.apiSecret ?? '',
+      description: body.description ?? '',
+      status: body.status ?? 'active',
+      createdAt: now,
+      updatedAt: now,
+      createdBy: 'extreme',
+    }
+    providersList = [...providersList, newP]
+    return HttpResponse.json(newP, { status: 201 })
+  }),
+  http.put('/api/models/providers/:id', async ({ params, request }) => {
+    const { id } = params as { id: string }
+    const idx = providersList.findIndex((p) => p.id === id)
+    if (idx === -1) return HttpResponse.json({ message: '供应商不存在' }, { status: 404 })
+    const body = (await request.json()) as Partial<Provider>
+    const now = new Date().toISOString().slice(0, 10)
+    providersList = providersList.map((p, i) =>
+      i === idx ? { ...p, ...body, id: p.id, updatedAt: now } : p
+    )
+    return HttpResponse.json(providersList[idx], { status: 200 })
+  }),
+  http.delete('/api/models/providers/:id', ({ params }) => {
+    const { id } = params as { id: string }
+    const idx = providersList.findIndex((p) => p.id === id)
+    if (idx === -1) return HttpResponse.json({ message: '供应商不存在' }, { status: 404 })
+    providersList = providersList.filter((p) => p.id !== id)
+    return new HttpResponse(null, { status: 204 })
+  }),
+
+  // 模型列表
+  http.get('/api/models/list', () => {
+    return HttpResponse.json(modelsList, { status: 200 })
+  }),
+  http.get('/api/models/list/:id', ({ params }) => {
+    const { id } = params as { id: string }
+    const m = modelsList.find((x) => x.id === id)
+    if (!m) return HttpResponse.json({ message: '模型不存在' }, { status: 404 })
+    return HttpResponse.json(m, { status: 200 })
+  }),
+  http.post('/api/models/list', async ({ request }) => {
+    const body = (await request.json()) as Partial<Model> & { name: string; category: Model['category']; providerId: string }
+    const id = `model${Date.now()}`
+    const now = new Date().toISOString().slice(0, 10)
+    const newM: Model = {
+      id,
+      name: body.name ?? '未命名',
+      category: body.category ?? 'text',
+      providerId: body.providerId ?? '',
+      params: body.params ?? {},
+      description: body.description ?? '',
+      isDefault: body.isDefault ?? false,
+      createdAt: now,
+      updatedAt: now,
+      createdBy: 'extreme',
+    }
+    if (newM.isDefault) {
+      modelsList.forEach((m) => {
+        if (m.category === newM.category && m.id !== newM.id) (m as Model).isDefault = false
+      })
+    }
+    modelsList = [...modelsList, newM]
+    return HttpResponse.json(newM, { status: 201 })
+  }),
+  http.put('/api/models/list/:id', async ({ params, request }) => {
+    const { id } = params as { id: string }
+    const idx = modelsList.findIndex((m) => m.id === id)
+    if (idx === -1) return HttpResponse.json({ message: '模型不存在' }, { status: 404 })
+    const body = (await request.json()) as Partial<Model>
+    const now = new Date().toISOString().slice(0, 10)
+    const updated = { ...modelsList[idx], ...body, id: modelsList[idx].id, updatedAt: now }
+    if (body.isDefault === true) {
+      modelsList = modelsList.map((m) =>
+        m.category === updated.category && m.id !== id ? { ...m, isDefault: false } : m
+      )
+      modelsList[idx] = updated
+    } else {
+      modelsList = modelsList.map((m, i) => (i === idx ? updated : m))
+    }
+    return HttpResponse.json(modelsList[idx], { status: 200 })
+  }),
+  http.delete('/api/models/list/:id', ({ params }) => {
+    const { id } = params as { id: string }
+    const idx = modelsList.findIndex((m) => m.id === id)
+    if (idx === -1) return HttpResponse.json({ message: '模型不存在' }, { status: 404 })
+    modelsList = modelsList.filter((m) => m.id !== id)
+    return new HttpResponse(null, { status: 204 })
+  }),
+
+  // 模型全局设置
+  http.get('/api/models/settings', () => {
+    return HttpResponse.json(modelSettingsStore, { status: 200 })
+  }),
+  http.put('/api/models/settings', async ({ request }) => {
+    const body = (await request.json()) as Partial<ModelSettings>
+    modelSettingsStore = { ...modelSettingsStore, ...body }
+    return HttpResponse.json(modelSettingsStore, { status: 200 })
   }),
 ]
 

@@ -10,6 +10,7 @@ import {
   FileTextOutlined,
   InboxOutlined,
   RobotOutlined,
+  ApiOutlined,
 } from '@ant-design/icons'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAppStore } from '../store/useAppStore'
@@ -35,6 +36,7 @@ const MainLayout: React.FC = () => {
     if (location.pathname.startsWith('/prompts')) return ['prompts']
     if (location.pathname.startsWith('/files')) return ['files']
     if (location.pathname.startsWith('/agents')) return ['agents']
+    if (location.pathname.startsWith('/models')) return ['models']
     if (location.pathname.startsWith('/settings')) return ['settings']
     return []
   }, [location.pathname])
@@ -49,6 +51,7 @@ const MainLayout: React.FC = () => {
       prompts: '提示词模板',
       files: '文件管理',
       agents: 'Agent管理',
+      models: '模型管理',
       settings: t('menu.settings'),
       chapters: '章节管理',
       studio: '分镜工作室',
@@ -98,6 +101,11 @@ const MainLayout: React.FC = () => {
       key: 'agents',
       icon: <RobotOutlined />,
       label: <Link to="/agents">Agent管理</Link>,
+    },
+    {
+      key: 'models',
+      icon: <ApiOutlined />,
+      label: <Link to="/models">模型管理</Link>,
     },
     {
       key: 'settings',

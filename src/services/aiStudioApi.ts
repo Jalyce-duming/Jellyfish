@@ -9,6 +9,9 @@ import type {
   FileItem,
   TimelineClip,
   Agent,
+  Provider,
+  Model,
+  ModelSettings,
 } from '../mocks/data'
 
 const api = {
@@ -47,6 +50,26 @@ const api = {
       post<Agent>('/agents', data),
     update: (id: string, data: Partial<Agent>) => put<Agent>(`/agents/${id}`, data),
     delete: (id: string) => del<void>(`/agents/${id}`),
+  },
+  models: {
+    providers: {
+      list: () => get<Provider[]>('/models/providers'),
+      get: (id: string) => get<Provider>(`/models/providers/${id}`),
+      create: (data: Partial<Provider> & { name: string; baseUrl: string }) =>
+        post<Provider>('/models/providers', data),
+      update: (id: string, data: Partial<Provider>) => put<Provider>(`/models/providers/${id}`, data),
+      delete: (id: string) => del<void>(`/models/providers/${id}`),
+    },
+    list: () => get<Model[]>('/models/list'),
+    get: (id: string) => get<Model>(`/models/list/${id}`),
+    create: (data: Partial<Model> & { name: string; category: Model['category']; providerId: string }) =>
+      post<Model>('/models/list', data),
+    update: (id: string, data: Partial<Model>) => put<Model>(`/models/list/${id}`, data),
+    delete: (id: string) => del<void>(`/models/list/${id}`),
+    settings: {
+      get: () => get<ModelSettings>('/models/settings'),
+      update: (data: Partial<ModelSettings>) => put<ModelSettings>('/models/settings', data),
+    },
   },
 }
 

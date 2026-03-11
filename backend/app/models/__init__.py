@@ -4,6 +4,12 @@ from app.core.db import Base
 from app.models.base import TimestampMixin
 
 from app.models.llm import Model, ModelSettings, Provider
+from app.models.task import GenerationTask
+from app.models.task_links import (
+    ChapterGenerationTaskLink,
+    ProjectGenerationTaskLink,
+    ShotGenerationTaskLink,
+)
 from app.models.studio import (
     Actor,
     ActorImage,
@@ -61,4 +67,8 @@ __all__ = [
     "Provider",
     "Model",
     "ModelSettings",
+    "GenerationTask",
+    "ProjectGenerationTaskLink",
+    "ChapterGenerationTaskLink",
+    "ShotGenerationTaskLink",
 ]

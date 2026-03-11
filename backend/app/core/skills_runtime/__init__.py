@@ -33,6 +33,7 @@ from app.core.skills_runtime.base import (
     FilmEntityExtractor,
     FilmShotlistStoryboarder,
 )
+from app.core.skills_runtime.tasks import FilmEntityExtractionTask, FilmShotlistTask
 
 __all__ = [
     # schemas
@@ -59,4 +60,7 @@ __all__ = [
     "ShotlistExtractorBase",
     "FilmEntityExtractor",
     "FilmShotlistStoryboarder",
+    # tasks
+    "FilmEntityExtractionTask",
+    "FilmShotlistTask",
 ]

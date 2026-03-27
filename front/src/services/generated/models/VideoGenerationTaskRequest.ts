@@ -3,7 +3,7 @@
 /* tslint:disable */
 /* eslint-disable */
 /**
- * 视频生成任务请求：基于 shot_id 自动组装参考帧与时长。
+ * 视频生成任务请求。
  */
 export type VideoGenerationTaskRequest = {
     /**
@@ -18,6 +18,10 @@ export type VideoGenerationTaskRequest = {
      * 视频提示词（text_only 必填）
      */
     prompt?: (string | null);
+    /**
+     * 参考图 file_id 列表，数量需与 reference_mode 严格匹配
+     */
+    images?: Array<string>;
     /**
      * 分辨率（可选），如 720x1280
      */

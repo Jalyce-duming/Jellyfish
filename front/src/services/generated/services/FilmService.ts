@@ -9,6 +9,7 @@ import type { ApiResponse_TaskCreated_ } from '../models/ApiResponse_TaskCreated
 import type { ApiResponse_TaskLinkAdoptRead_ } from '../models/ApiResponse_TaskLinkAdoptRead_';
 import type { ApiResponse_TaskResultRead_ } from '../models/ApiResponse_TaskResultRead_';
 import type { ApiResponse_TaskStatusRead_ } from '../models/ApiResponse_TaskStatusRead_';
+import type { ApiResponse_VideoPromptPreviewResponse_ } from '../models/ApiResponse_VideoPromptPreviewResponse_';
 import type { GenerationTaskLinkCreate } from '../models/GenerationTaskLinkCreate';
 import type { GenerationTaskLinkUpdate } from '../models/GenerationTaskLinkUpdate';
 import type { ImageGenerationTaskRequest } from '../models/ImageGenerationTaskRequest';
@@ -19,6 +20,27 @@ import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
 export class FilmService {
+    /**
+     * 视频提示词预览
+     * 预览视频生成的提示词与自动关联参考图。
+     * @returns ApiResponse_VideoPromptPreviewResponse_ Successful Response
+     * @throws ApiError
+     */
+    public static previewVideoGenerationPromptApiV1FilmTasksVideoPreviewPromptPost({
+        requestBody,
+    }: {
+        requestBody: VideoGenerationTaskRequest,
+    }): CancelablePromise<ApiResponse_VideoPromptPreviewResponse_> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/film/tasks/video/preview-prompt',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
     /**
      * 视频生成（任务版）
      * 创建视频生成任务并后台执行，结果通过 /tasks/{task_id}/result 获取。

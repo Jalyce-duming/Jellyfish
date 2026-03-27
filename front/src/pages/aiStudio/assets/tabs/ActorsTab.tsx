@@ -138,7 +138,7 @@ export function ActorsTab() {
       {filtered.length === 0 && !loading ? (
         <Empty description="暂无演员" image={Empty.PRESENTED_IMAGE_SIMPLE} />
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {filtered.map((a) => (
             <DisplayImageCard
               key={a.id}

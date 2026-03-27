@@ -56,6 +56,7 @@ export type { ApiResponse_TaskLinkAdoptRead_ } from './models/ApiResponse_TaskLi
 export type { ApiResponse_TaskResultRead_ } from './models/ApiResponse_TaskResultRead_';
 export type { ApiResponse_TaskStatusRead_ } from './models/ApiResponse_TaskStatusRead_';
 export type { ApiResponse_VariantAnalysisResult_ } from './models/ApiResponse_VariantAnalysisResult_';
+export type { ApiResponse_VideoPromptPreviewResponse_ } from './models/ApiResponse_VideoPromptPreviewResponse_';
 export type { Body_upload_file_api_api_v1_studio_files_upload_post } from './models/Body_upload_file_api_api_v1_studio_files_upload_post';
 export type { CameraAngle } from './models/CameraAngle';
 export type { CameraMovement } from './models/CameraMovement';
@@ -185,6 +186,7 @@ export type { VariantAnalysisResult } from './models/VariantAnalysisResult';
 export type { VariantSuggestion } from './models/VariantSuggestion';
 export type { VFXType } from './models/VFXType';
 export type { VideoGenerationTaskRequest } from './models/VideoGenerationTaskRequest';
+export type { VideoPromptPreviewResponse } from './models/VideoPromptPreviewResponse';
 
 export { DefaultService } from './services/DefaultService';
 export { FilmService } from './services/FilmService';

@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import base64
 import mimetypes
-from collections.abc import Iterable
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,6 +29,137 @@ from .common import TaskCreated, _CreateOnlyTask, bind_task
 from .video_request import VideoGenerationTaskRequest
 
 router = APIRouter()
+
+
+class VideoPromptPreviewResponse(BaseModel):
+    prompt: str = Field(..., description="最终用于视频生成的提示词")
+    images: list[str] = Field(default_factory=list, description="关联参考图 file_id 列表")
+
+
+REQUIRED_FRAMES_BY_MODE: dict[str, tuple[ShotFrameType, ...]] = {
+    "first": (ShotFrameType.first,),
+    "last": (ShotFrameType.last,),
+    "key": (ShotFrameType.key,),
+    "first_last": (ShotFrameType.first, ShotFrameType.last),
+    "first_last_key": (ShotFrameType.first, ShotFrameType.last, ShotFrameType.key),
+    "text_only": (),
+}
+
+
+def _required_image_count(reference_mode: str) -> int:
+    return len(REQUIRED_FRAMES_BY_MODE[reference_mode])
+
+
+def _validate_images_count(reference_mode: str, images: list[str]) -> None:
+    expected = _required_image_count(reference_mode)
+    actual = len(images or [])
+    if actual != expected:
+        raise HTTPException(
+            status_code=400,
+            detail=f"reference_mode={reference_mode} requires exactly {expected} images, got {actual}",
+        )
+
+
+async def _validate_shot_and_duration(db: AsyncSession, shot_id: str) -> ShotDetail:
+    shot = await db.get(Shot, shot_id)
+    if shot is None:
+        raise HTTPException(status_code=404, detail="Shot not found")
+    shot_detail = await db.get(ShotDetail, shot_id)
+    if shot_detail is None:
+        raise HTTPException(status_code=404, detail="Shot detail not found")
+    if shot_detail.duration is None or shot_detail.duration <= 0:
+        raise HTTPException(status_code=400, detail="Shot duration is not configured; please set shot duration first")
+    return shot_detail
+
+
+async def _file_id_to_data_url(db: AsyncSession, *, file_id: str) -> str:
+    file_obj = await db.get(FileItem, file_id)
+    if file_obj is None or not file_obj.storage_key:
+        raise HTTPException(status_code=400, detail=f"Invalid image file_id: {file_id}")
+    try:
+        content = await storage.download_file(key=file_obj.storage_key)
+    except Exception:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=f"Invalid image file_id: {file_id}") from None
+    if not content:
+        raise HTTPException(status_code=400, detail=f"Invalid image file_id: {file_id}")
+
+    content_type: str | None = None
+    try:
+        info = await storage.get_file_info(key=file_obj.storage_key)
+        content_type = (info.content_type or "").strip().lower() or None
+    except Exception:  # noqa: BLE001
+        content_type = None
+    if not content_type:
+        guessed_type, _ = mimetypes.guess_type(file_obj.storage_key)
+        content_type = (guessed_type or "").strip().lower() or None
+    if not content_type or not content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail=f"Invalid image file_id: {file_id}")
+
+    image_format = content_type.split("/", 1)[1].split(";", 1)[0].strip().lower() or "png"
+    encoded = base64.b64encode(content).decode("ascii")
+    return f"data:image/{image_format};base64,{encoded}"
+
+
+async def _preview_prompt_and_images_by_old_logic(
+    db: AsyncSession,
+    *,
+    shot_id: str,
+    reference_mode: str,
+    prompt: str | None,
+) -> tuple[str, list[str], ShotDetail]:
+    shot_detail = await _validate_shot_and_duration(db, shot_id)
+    required_frames = REQUIRED_FRAMES_BY_MODE[reference_mode]
+
+    frame_map: dict[ShotFrameType, ShotFrameImage] = {}
+    if required_frames:
+        stmt = select(ShotFrameImage).where(
+            ShotFrameImage.shot_detail_id == shot_id,
+            ShotFrameImage.frame_type.in_(required_frames),
+        )
+        rows = (await db.execute(stmt)).scalars().all()
+        frame_map = {r.frame_type: r for r in rows}
+
+        missing: list[ShotFrameType] = []
+        for ft in required_frames:
+            row = frame_map.get(ft)
+            if row is None or not row.file_id:
+                missing.append(ft)
+        if missing:
+            missing_name = ",".join(m.value for m in missing)
+            raise HTTPException(
+                status_code=400,
+                detail=f"Required frame image is missing: {missing_name}; please generate it first",
+            )
+
+    prompt_by_mode = {
+        "first": (shot_detail.first_frame_prompt or "").strip(),
+        "last": (shot_detail.last_frame_prompt or "").strip(),
+        "key": (shot_detail.key_frame_prompt or "").strip(),
+        "first_last": "\n".join(
+            p
+            for p in [
+                (shot_detail.first_frame_prompt or "").strip(),
+                (shot_detail.last_frame_prompt or "").strip(),
+            ]
+            if p
+        ),
+        "first_last_key": "\n".join(
+            p
+            for p in [
+                (shot_detail.first_frame_prompt or "").strip(),
+                (shot_detail.last_frame_prompt or "").strip(),
+                (shot_detail.key_frame_prompt or "").strip(),
+            ]
+            if p
+        ),
+        "text_only": "",
+    }
+    final_prompt = (prompt or "").strip() or prompt_by_mode[reference_mode]
+    if reference_mode == "text_only" and not final_prompt:
+        raise HTTPException(status_code=400, detail="prompt is required when reference_mode=text_only")
+
+    image_ids = [str(frame_map[ft].file_id) for ft in required_frames if frame_map.get(ft) and frame_map[ft].file_id]
+    return final_prompt, image_ids, shot_detail
 
 
 def _provider_key_from_db_name(name: str) -> str:
@@ -132,6 +263,26 @@ async def _persist_generated_video_to_shot(
 
 
 @router.post(
+    "/tasks/video/preview-prompt",
+    response_model=ApiResponse[VideoPromptPreviewResponse],
+    status_code=200,
+    summary="视频提示词预览",
+)
+async def preview_video_generation_prompt(
+    body: VideoGenerationTaskRequest,
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse[VideoPromptPreviewResponse]:
+    """预览视频生成的提示词与自动关联参考图。"""
+    prompt, images, _shot_detail = await _preview_prompt_and_images_by_old_logic(
+        db,
+        shot_id=body.shot_id,
+        reference_mode=body.reference_mode,
+        prompt=body.prompt,
+    )
+    return success_response(VideoPromptPreviewResponse(prompt=prompt, images=images))
+
+
+@router.post(
     "/tasks/video",
     response_model=ApiResponse[TaskCreated],
     status_code=201,
@@ -148,123 +299,15 @@ async def create_video_generation_task(
     model = await _resolve_default_video_model(db)
     provider_cfg = await _load_provider_config_by_model(db, model)
 
-    shot = await db.get(Shot, body.shot_id)
-    if shot is None:
-        raise HTTPException(status_code=404, detail="Shot not found")
-    shot_detail = await db.get(ShotDetail, body.shot_id)
-    if shot_detail is None:
-        raise HTTPException(status_code=404, detail="Shot detail not found")
-    if shot_detail.duration is None or shot_detail.duration <= 0:
-        raise HTTPException(status_code=400, detail="Shot duration is not configured; please set shot duration first")
+    shot_detail = await _validate_shot_and_duration(db, body.shot_id)
+    _validate_images_count(body.reference_mode, body.images)
+    final_prompt = (body.prompt or "").strip()
+    if not final_prompt:
+        raise HTTPException(status_code=400, detail="prompt is required")
 
-    required_by_mode: dict[str, tuple[ShotFrameType, ...]] = {
-        "first": (ShotFrameType.first,),
-        "last": (ShotFrameType.last,),
-        "key": (ShotFrameType.key,),
-        "first_last": (ShotFrameType.first, ShotFrameType.last),
-        "first_last_key": (ShotFrameType.first, ShotFrameType.last, ShotFrameType.key),
-        "text_only": (),
-    }
-    required_frames = required_by_mode[body.reference_mode]
-
-    frame_map: dict[ShotFrameType, ShotFrameImage] = {}
-    if required_frames:
-        stmt = select(ShotFrameImage).where(
-            ShotFrameImage.shot_detail_id == body.shot_id,
-            ShotFrameImage.frame_type.in_(required_frames),
-        )
-        rows = (await db.execute(stmt)).scalars().all()
-        frame_map = {r.frame_type: r for r in rows}
-
-    def _missing_frames(required: Iterable[ShotFrameType]) -> list[ShotFrameType]:
-        missing: list[ShotFrameType] = []
-        for ft in required:
-            row = frame_map.get(ft)
-            if row is None or not row.file_id:
-                missing.append(ft)
-        return missing
-
-    if body.reference_mode != "text_only":
-        missing = _missing_frames(required_frames)
-        if missing:
-            missing_name = ",".join(m.value for m in missing)
-            raise HTTPException(
-                status_code=400,
-                detail=f"Required frame image is missing: {missing_name}; please generate it first",
-            )
-
-    file_ids = {row.file_id for row in frame_map.values() if row.file_id}
-    file_items: dict[str, FileItem] = {}
-    if file_ids:
-        file_stmt = select(FileItem).where(FileItem.id.in_(file_ids))
-        file_rows = (await db.execute(file_stmt)).scalars().all()
-        file_items = {f.id: f for f in file_rows}
-
-    async def _frame_base64(ft: ShotFrameType) -> str | None:
-        row = frame_map.get(ft)
-        if row is None or not row.file_id:
-            return None
-        file_obj = file_items.get(row.file_id)
-        if file_obj is None or not file_obj.storage_key:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Required frame image is missing: {ft.value}; please generate it first",
-            )
-        try:
-            content = await storage.download_file(key=file_obj.storage_key)
-        except Exception:  # noqa: BLE001
-            raise HTTPException(
-                status_code=400,
-                detail=f"Required frame image is missing: {ft.value}; please generate it first",
-            ) from None
-        if not content:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Required frame image is missing: {ft.value}; please generate it first",
-            )
-
-        content_type: str | None = None
-        try:
-            info = await storage.get_file_info(key=file_obj.storage_key)
-            content_type = (info.content_type or "").strip().lower() or None
-        except Exception:  # noqa: BLE001
-            content_type = None
-        if not content_type:
-            guessed_type, _ = mimetypes.guess_type(file_obj.storage_key)
-            content_type = (guessed_type or "").strip().lower() or None
-        if not content_type or not content_type.startswith("image/"):
-            content_type = "image/png"
-
-        image_format = content_type.split("/", 1)[1].split(";", 1)[0].strip().lower() or "png"
-        encoded = base64.b64encode(content).decode("ascii")
-        return f"data:image/{image_format};base64,{encoded}"
-
-    prompt_by_mode = {
-        "first": (shot_detail.first_frame_prompt or "").strip(),
-        "last": (shot_detail.last_frame_prompt or "").strip(),
-        "key": (shot_detail.key_frame_prompt or "").strip(),
-        "first_last": "\n".join(
-            p
-            for p in [
-                (shot_detail.first_frame_prompt or "").strip(),
-                (shot_detail.last_frame_prompt or "").strip(),
-            ]
-            if p
-        ),
-        "first_last_key": "\n".join(
-            p
-            for p in [
-                (shot_detail.first_frame_prompt or "").strip(),
-                (shot_detail.last_frame_prompt or "").strip(),
-                (shot_detail.key_frame_prompt or "").strip(),
-            ]
-            if p
-        ),
-        "text_only": "",
-    }
-    final_prompt = (body.prompt or "").strip() or prompt_by_mode[body.reference_mode]
-    if body.reference_mode == "text_only" and not final_prompt:
-        raise HTTPException(status_code=400, detail="prompt is required when reference_mode=text_only")
+    required_frames = REQUIRED_FRAMES_BY_MODE[body.reference_mode]
+    frame_data_urls = [await _file_id_to_data_url(db, file_id=file_id) for file_id in body.images]
+    frame_map = {ft: frame_data_urls[i] for i, ft in enumerate(required_frames)}
 
     run_args: dict = {
         "shot_id": body.shot_id,
@@ -273,9 +316,9 @@ async def create_video_generation_task(
         "base_url": provider_cfg.base_url,
         "input": {
             "prompt": final_prompt,
-            "first_frame_base64": await _frame_base64(ShotFrameType.first),
-            "last_frame_base64": await _frame_base64(ShotFrameType.last),
-            "key_frame_base64": await _frame_base64(ShotFrameType.key),
+            "first_frame_base64": frame_map.get(ShotFrameType.first),
+            "last_frame_base64": frame_map.get(ShotFrameType.last),
+            "key_frame_base64": frame_map.get(ShotFrameType.key),
             "model": model.name,
             "size": body.size,
             "seconds": shot_detail.duration,

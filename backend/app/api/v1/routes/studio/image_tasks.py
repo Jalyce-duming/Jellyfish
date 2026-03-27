@@ -819,29 +819,29 @@ async def _create_image_task_and_link(
         )
         link_result = await session.execute(link_stmt)
         link_row = link_result.scalars().first()
-        if link_row is not None and not link_row.file_id:
+        if link_row is not None:
             link_row.file_id = file_id
 
         # 根据 relation_type 将生成文件填充到已有 image 槽位的 file_id（仅首张生效）
         if relation_type == "actor_image":
             image_row = await session.get(ActorImage, int(relation_entity_id))
-            if image_row is not None and not image_row.file_id:
+            if image_row is not None:
                 image_row.file_id = file_id
         elif relation_type == "scene_image":
             image_row = await session.get(SceneImage, int(relation_entity_id))
-            if image_row is not None and not image_row.file_id:
+            if image_row is not None:
                 image_row.file_id = file_id
         elif relation_type == "prop_image":
             image_row = await session.get(PropImage, int(relation_entity_id))
-            if image_row is not None and not image_row.file_id:
+            if image_row is not None:
                 image_row.file_id = file_id
         elif relation_type == "costume_image":
             image_row = await session.get(CostumeImage, int(relation_entity_id))
-            if image_row is not None and not image_row.file_id:
+            if image_row is not None:
                 image_row.file_id = file_id
         elif relation_type == "character_image":
             image_row = await session.get(CharacterImage, int(relation_entity_id))
-            if image_row is not None and not image_row.file_id:
+            if image_row is not None:
                 image_row.file_id = file_id
         elif relation_type == "character":
             # 角色生成（任务版）：落库为 CharacterImage（优先填充 front+low 槽位；没有则创建）
@@ -859,9 +859,8 @@ async def _create_image_task_and_link(
             ci_res = await session.execute(stmt_ci)
             ci = ci_res.scalars().first()
             if ci is not None:
-                if not ci.file_id:
-                    ci.file_id = file_id
-                    ci.format = getattr(ci, "format", "") or "png"
+                ci.file_id = file_id
+                ci.format = getattr(ci, "format", "") or "png"
             else:
                 # 创建一个 front+low 的槽位，并设为主图（同一角色只允许一张主图，下面会清理其他主图）
                 ci = CharacterImage(

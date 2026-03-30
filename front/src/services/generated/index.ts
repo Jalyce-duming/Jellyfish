@@ -8,6 +8,7 @@ export { OpenAPI } from './core/OpenAPI';
 export type { OpenAPIConfig } from './core/OpenAPI';
 
 export type { ApiResponse_ChapterRead_ } from './models/ApiResponse_ChapterRead_';
+export type { ApiResponse_CharacterPortraitAnalysisResult_ } from './models/ApiResponse_CharacterPortraitAnalysisResult_';
 export type { ApiResponse_dict_ } from './models/ApiResponse_dict_';
 export type { ApiResponse_dict_str__Any__ } from './models/ApiResponse_dict_str__Any__';
 export type { ApiResponse_EntityMergeResult_ } from './models/ApiResponse_EntityMergeResult_';
@@ -67,6 +68,8 @@ export type { ChapterCreate } from './models/ChapterCreate';
 export type { ChapterRead } from './models/ChapterRead';
 export type { ChapterStatus } from './models/ChapterStatus';
 export type { ChapterUpdate } from './models/ChapterUpdate';
+export type { CharacterPortraitAnalysisRequest } from './models/CharacterPortraitAnalysisRequest';
+export type { CharacterPortraitAnalysisResult } from './models/CharacterPortraitAnalysisResult';
 export type { CostumeTimeline } from './models/CostumeTimeline';
 export type { CostumeTimelineEntry } from './models/CostumeTimelineEntry';
 export type { DialogueLine } from './models/DialogueLine';

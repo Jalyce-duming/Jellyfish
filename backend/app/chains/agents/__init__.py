@@ -15,6 +15,7 @@ from app.chains.agents.consistency_checker_agent import ConsistencyCheckerAgent
 from app.chains.agents.script_optimizer_agent import ScriptOptimizerAgent
 from app.chains.agents.script_simplifier_agent import ScriptSimplifierAgent
 from app.chains.agents.output_compiler_agent import OutputCompilerAgent
+from app.chains.agents.character_portrait_analysis_agent import CharacterPortraitAnalysisAgent
 
 __all__ = [
     "AgentBase",
@@ -31,4 +32,5 @@ __all__ = [
     "ScriptOptimizerAgent",
     "ScriptSimplifierAgent",
     "OutputCompilerAgent",
+    "CharacterPortraitAnalysisAgent",
 ]

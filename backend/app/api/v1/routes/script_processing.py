@@ -11,6 +11,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from pydantic import BaseModel, Field
 
 from app.chains.agents import (
+    CharacterPortraitAnalysisAgent,
     ScriptDividerAgent,
     ElementExtractorAgent,
     EntityMergerAgent,
@@ -34,6 +35,7 @@ from app.chains.agents.script_processing_agents import (
 )
 from app.dependencies import get_llm
 from app.schemas.common import ApiResponse, success_response
+from app.schemas.skills.character_portrait import CharacterPortraitAnalysisResult
 
 logger = logging.getLogger(__name__)
 
@@ -327,6 +329,44 @@ async def check_consistency(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to check consistency: {str(e)}"
+        )
+
+
+# ============================================================================
+# 5b. CharacterPortraitAnalysisAgent - 人物画像缺失信息分析
+# ============================================================================
+class CharacterPortraitAnalysisRequest(BaseModel):
+    """人物画像缺失信息分析请求。"""
+
+    character_context: str | None = Field(
+        None,
+        description="原文人物上下文（可为空；用于提供额外背景，帮助判断缺失信息）",
+    )
+    character_description: str = Field(..., description="原文人物描述", min_length=1)
+
+
+@router.post(
+    "/analyze-character-portrait",
+    response_model=ApiResponse[CharacterPortraitAnalysisResult],
+    summary="分析人物画像缺失信息",
+    description="根据原文人物上下文与人物描述，判断缺少哪些关键信息，并给出优化后的人物画像描述。",
+)
+async def analyze_character_portrait(
+    request: CharacterPortraitAnalysisRequest,
+    llm: BaseChatModel = Depends(get_llm),
+) -> ApiResponse[CharacterPortraitAnalysisResult]:
+    try:
+        agent = CharacterPortraitAnalysisAgent(llm)
+        result = agent.analyze_character_description(
+            character_context=request.character_context,
+            character_description=request.character_description,
+        )
+        return success_response(data=result)
+    except Exception as e:
+        logger.error(f"Character portrait analysis failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to analyze character portrait: {str(e)}",
         )
 
 

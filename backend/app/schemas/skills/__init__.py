@@ -67,6 +67,7 @@ from app.schemas.skills.script_processing import (
     VariantAnalysisResult,
     VariantSuggestion,
 )
+from app.schemas.skills.character_portrait import CharacterPortraitAnalysisResult
 from app.schemas.skills.shot_frame_prompt import ShotFramePromptInput, ShotFramePromptResult
 
 __all__ = [
@@ -139,5 +140,6 @@ __all__ = [
     "ConsistencyCheckResult",
     "TableData",
     "OutputCompileResult",
+    "CharacterPortraitAnalysisResult",
 ]
 

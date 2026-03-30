@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { ApiResponse_CharacterPortraitAnalysisResult_ } from '../models/ApiResponse_CharacterPortraitAnalysisResult_';
 import type { ApiResponse_EntityMergeResult_ } from '../models/ApiResponse_EntityMergeResult_';
 import type { ApiResponse_ScriptConsistencyCheckResult_ } from '../models/ApiResponse_ScriptConsistencyCheckResult_';
 import type { ApiResponse_ScriptDivisionResult_ } from '../models/ApiResponse_ScriptDivisionResult_';
@@ -10,6 +11,7 @@ import type { ApiResponse_ScriptSimplificationResult_ } from '../models/ApiRespo
 import type { ApiResponse_ShotElementExtractionResult_ } from '../models/ApiResponse_ShotElementExtractionResult_';
 import type { ApiResponse_StudioScriptExtractionDraft_ } from '../models/ApiResponse_StudioScriptExtractionDraft_';
 import type { ApiResponse_VariantAnalysisResult_ } from '../models/ApiResponse_VariantAnalysisResult_';
+import type { CharacterPortraitAnalysisRequest } from '../models/CharacterPortraitAnalysisRequest';
 import type { EntityMergerRequest } from '../models/EntityMergerRequest';
 import type { FullProcessRequest } from '../models/FullProcessRequest';
 import type { ScriptConsistencyCheckRequest } from '../models/ScriptConsistencyCheckRequest';
@@ -122,6 +124,27 @@ export class ScriptProcessingService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/v1/script-processing/check-consistency',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 分析人物画像缺失信息
+     * 根据原文人物上下文与人物描述，判断缺少哪些关键信息，并给出优化后的人物画像描述。
+     * @returns ApiResponse_CharacterPortraitAnalysisResult_ Successful Response
+     * @throws ApiError
+     */
+    public static analyzeCharacterPortraitApiV1ScriptProcessingAnalyzeCharacterPortraitPost({
+        requestBody,
+    }: {
+        requestBody: CharacterPortraitAnalysisRequest,
+    }): CancelablePromise<ApiResponse_CharacterPortraitAnalysisResult_> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/script-processing/analyze-character-portrait',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

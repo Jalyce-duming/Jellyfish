@@ -18,7 +18,7 @@ import {
   message,
 } from 'antd'
 import { ArrowLeftOutlined, EditOutlined, ReloadOutlined } from '@ant-design/icons'
-import { FilmService } from '../../../../services/generated'
+import { FilmService, ScriptProcessingService } from '../../../../services/generated'
 import type { TaskStatus } from '../../../../services/generated'
 import { listTaskLinksNormalized } from '../../../../services/filmTaskLinks'
 import { buildFileDownloadUrl } from '../utils'
@@ -146,6 +146,11 @@ export function AssetEditPageBase<TAsset extends BaseAsset, TImage extends BaseA
   const [formVisualStyle, setFormVisualStyle] = useState<'现实' | '动漫'>('现实')
   const [savingBase, setSavingBase] = useState(false)
 
+  const [smartDetectLoading, setSmartDetectLoading] = useState(false)
+  const [smartDetectOpen, setSmartDetectOpen] = useState(false)
+  const [smartDetectIssues, setSmartDetectIssues] = useState<string[]>([])
+  const [smartDetectOptimizedDesc, setSmartDetectOptimizedDesc] = useState('')
+
   const [generatingByImageId, setGeneratingByImageId] = useState<Record<number, boolean>>({})
 
   const [promptPreviewOpen, setPromptPreviewOpen] = useState(false)
@@ -267,6 +272,57 @@ export function AssetEditPageBase<TAsset extends BaseAsset, TImage extends BaseA
       message.error('保存失败')
     } finally {
       setSavingBase(false)
+    }
+  }
+
+  const handleSmartDetectActorPortraitMissing = async () => {
+    // 仅对演员描述做缺失信息检测
+    if (relationType !== 'actor_image') return
+    if (!assetId) return
+
+    const description = (formDesc || '').trim()
+    if (!description) {
+      message.warning('请先输入演员描述再进行智能检测')
+      return
+    }
+
+    setSmartDetectLoading(true)
+    try {
+      const character_context = asset?.name ? `角色名：${formName}\n演员标签：${formTags}` : `演员标签：${formTags}`
+
+      const res = await ScriptProcessingService.analyzeCharacterPortraitApiV1ScriptProcessingAnalyzeCharacterPortraitPost({
+        requestBody: {
+          character_description: description,
+          character_context: (character_context || '').trim() || null,
+        },
+      })
+
+      const data = res.data
+      if (!data) {
+        message.error(res.message || '智能检测失败')
+        return
+      }
+
+      const issues = Array.isArray(data.issues)
+        ? data.issues.filter((it): it is string => typeof it === 'string' && it.trim().length > 0)
+        : []
+      const optimizedDesc = (data.optimized_description ?? '').trim()
+
+      setSmartDetectIssues(issues)
+      setSmartDetectOptimizedDesc(optimizedDesc)
+      setSmartDetectOpen(true)
+
+      if (issues.length > 0) message.warning(`发现 ${issues.length} 项可能缺失信息`)
+      else message.success('未发现缺失信息')
+    } catch (e: any) {
+      const status = e?.response?.status ?? e?.status
+      if (status === 404) {
+        message.warning('接口未找到：请运行 `pnpm run openapi:update` 生成客户端代码后重试')
+      } else {
+        message.error(e?.message || '智能检测失败')
+      }
+    } finally {
+      setSmartDetectLoading(false)
     }
   }
 
@@ -459,19 +515,44 @@ export function AssetEditPageBase<TAsset extends BaseAsset, TImage extends BaseA
               <div className="space-y-3">
                 <div>
                   <div className="text-gray-600 text-sm mb-1">名称</div>
-                  <Input value={formName} onChange={(e) => setFormName(e.target.value)} />
+                  <Input value={formName} onChange={(e) => setFormName(e.target.value)} disabled={smartDetectLoading || savingBase} />
                 </div>
                 <div>
-                  <div className="text-gray-600 text-sm mb-1">描述</div>
-                  <Input.TextArea rows={4} value={formDesc} onChange={(e) => setFormDesc(e.target.value)} />
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <div className="text-gray-600 text-sm">描述</div>
+                      {relationType === 'actor_image' ? (
+                        <Button
+                          type="primary"
+                          size="small"
+                          onClick={() => void handleSmartDetectActorPortraitMissing()}
+                          loading={smartDetectLoading}
+                          disabled={Boolean(loading)}
+                        >
+                          智能检测
+                        </Button>
+                      ) : null}
+                    </div>
+                  <Input.TextArea
+                    rows={4}
+                    value={formDesc}
+                    onChange={(e) => setFormDesc(e.target.value)}
+                    disabled={smartDetectLoading || savingBase}
+                  />
                 </div>
                 <div>
                   <div className="text-gray-600 text-sm mb-1">标签（逗号分隔）</div>
-                  <Input value={formTags} onChange={(e) => setFormTags(e.target.value)} />
+                  <Input value={formTags} onChange={(e) => setFormTags(e.target.value)} disabled={smartDetectLoading || savingBase} />
                 </div>
                 <div>
                   <div className="text-gray-600 text-sm mb-1">镜头数（仅可增加，最大 4）</div>
-                  <InputNumber min={minViewCount} max={4} precision={0} value={formViewCount} onChange={(v) => setFormViewCount(v ?? minViewCount)} />
+                  <InputNumber
+                    min={minViewCount}
+                    max={4}
+                    precision={0}
+                    value={formViewCount}
+                    onChange={(v) => setFormViewCount(v ?? minViewCount)}
+                    disabled={smartDetectLoading || savingBase}
+                  />
                 </div>
                 <div>
                   <div className="text-gray-600 text-sm mb-1">视觉风格</div>
@@ -479,13 +560,14 @@ export function AssetEditPageBase<TAsset extends BaseAsset, TImage extends BaseA
                     style={{ width: 200 }}
                     value={formVisualStyle}
                     onChange={(v) => setFormVisualStyle(v as '现实' | '动漫')}
+                    disabled={smartDetectLoading || savingBase}
                     options={[
                       { value: '现实', label: '现实' },
                       { value: '动漫', label: '动漫' },
                     ]}
                   />
                 </div>
-                <Button type="primary" onClick={() => void handleSaveBaseInfo()} loading={savingBase}>
+                <Button type="primary" onClick={() => void handleSaveBaseInfo()} loading={savingBase || smartDetectLoading}>
                   保存基础信息
                 </Button>
               </div>
@@ -631,6 +713,64 @@ export function AssetEditPageBase<TAsset extends BaseAsset, TImage extends BaseA
                 onChange={(e) => setPromptPreviewDraft(e.target.value)}
                 placeholder="请输入提示词…"
               />
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        title="智能检测：缺失信息"
+        open={smartDetectOpen}
+        onCancel={() => setSmartDetectOpen(false)}
+        footer={null}
+        destroyOnClose
+        width={880}
+      >
+        {smartDetectLoading ? (
+          <div className="py-8 text-center">
+            <Spin />
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="space-y-2">
+              {smartDetectIssues.length === 0 ? (
+                <div className="text-sm text-gray-600">未发现缺失信息。</div>
+              ) : (
+                <div className="text-sm text-gray-600">发现 {smartDetectIssues.length} 项可能缺失信息（建议参考下面优化后的描述）：</div>
+              )}
+              {smartDetectIssues.length > 0 ? (
+                <div className="space-y-2">
+                  {smartDetectIssues.map((it, idx) => (
+                    <div key={`${idx}_${it}`} className="text-sm text-gray-800">
+                      {idx + 1}. {it}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+
+            <div>
+              <div className="text-xs text-gray-500 mb-2">优化后的描述（可直接填入）</div>
+              <Input.TextArea rows={6} value={smartDetectOptimizedDesc} readOnly />
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button
+                onClick={() => {
+                  const next = smartDetectOptimizedDesc.trim()
+                  if (!next) {
+                    message.warning('未返回有效的优化描述')
+                    return
+                  }
+                  setFormDesc(next)
+                  setSmartDetectOpen(false)
+                  message.success('已填入描述')
+                }}
+                disabled={!smartDetectOptimizedDesc.trim()}
+              >
+                填入描述
+              </Button>
+              <Button onClick={() => setSmartDetectOpen(false)}>关闭</Button>
             </div>
           </div>
         )}

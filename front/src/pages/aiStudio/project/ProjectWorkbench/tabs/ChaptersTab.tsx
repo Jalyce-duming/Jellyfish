@@ -16,6 +16,7 @@ import { useChapters, newId, type Chapter } from '../hooks/useProjectData'
 import { ChapterRawTextEditorModal } from '../../../chapter/components/ChapterRawTextEditorModal'
 import { ensureHasShotsBeforeShooting } from '../ensureHasShotsBeforeShooting'
 import { getChapterPreparationState } from '../chapterPreparation'
+import { loadChapterFlowStats, type ChapterFlowStats } from '../projectFlowStats'
 
 const { TextArea } = Input
 const CREATE_PARAM = 'create'
@@ -32,6 +33,7 @@ export function ChaptersTab() {
   const [createOpen, setCreateOpen] = useState(false)
   const [createTitle, setCreateTitle] = useState('')
   const [createContent, setCreateContent] = useState('')
+  const [chapterFlowMap, setChapterFlowMap] = useState<Record<string, ChapterFlowStats>>({})
 
   const createParam = searchParams.get(CREATE_PARAM)
   const editParam = searchParams.get(EDIT_PARAM)
@@ -63,6 +65,32 @@ export function ChaptersTab() {
       { replace: true }
     )
   }, [chapters, editParam, setSearchParams])
+
+  useEffect(() => {
+    let cancelled = false
+    if (!chapters.length) {
+      setChapterFlowMap({})
+      return () => {
+        cancelled = true
+      }
+    }
+
+    const run = async () => {
+      try {
+        const rows = await loadChapterFlowStats(chapters)
+        if (!cancelled) {
+          setChapterFlowMap(Object.fromEntries(rows.map((row) => [row.chapterId, row])))
+        }
+      } catch {
+        if (!cancelled) setChapterFlowMap({})
+      }
+    }
+
+    void run()
+    return () => {
+      cancelled = true
+    }
+  }, [chapters])
 
   const openEditModal = (chapter: Chapter) => {
     setEditingChapter(chapter)
@@ -242,6 +270,27 @@ export function ChaptersTab() {
           <div className="space-y-1">
             <Tag color={state.color}>{state.text}</Tag>
             <div className="text-[11px] text-gray-500 leading-5">{state.hint}</div>
+          </div>
+        )
+      },
+    },
+    {
+      title: '分镜流转',
+      key: 'shotFlow',
+      width: 220,
+      render: (_, record) => {
+        const stats = chapterFlowMap[record.id]
+        return (
+          <div className="flex flex-wrap gap-1">
+            <Tag bordered={false} color="gold" className="mr-0">
+              待确认 {stats?.pendingConfirmShots ?? 0}
+            </Tag>
+            <Tag bordered={false} color="green" className="mr-0">
+              已就绪 {stats?.readyShots ?? 0}
+            </Tag>
+            <Tag bordered={false} color="processing" className="mr-0">
+              生成中 {stats?.generatingShots ?? 0}
+            </Tag>
           </div>
         )
       },

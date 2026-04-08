@@ -46,7 +46,10 @@ from app.services.script_extraction_cache import (
     set_cached_script_extract,
 )
 from app.services.studio.script_division import write_division_result_to_chapter
-from app.services.studio import sync_shot_extracted_candidates_from_draft
+from app.services.studio import (
+    sync_shot_extracted_candidates_from_draft,
+    sync_shot_extracted_dialogue_candidates_from_draft,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -555,6 +558,11 @@ async def extract_script(
                     chapter_id=request.chapter_id,
                     draft=cached,
                 )
+                await sync_shot_extracted_dialogue_candidates_from_draft(
+                    db,
+                    chapter_id=request.chapter_id,
+                    draft=cached,
+                )
                 await db.commit()
                 return success_response(data=cached, meta={"from_cache": True})
 
@@ -567,6 +575,11 @@ async def extract_script(
         )
         set_cached_script_extract(cache_key, result)
         await sync_shot_extracted_candidates_from_draft(
+            db,
+            chapter_id=request.chapter_id,
+            draft=result,
+        )
+        await sync_shot_extracted_dialogue_candidates_from_draft(
             db,
             chapter_id=request.chapter_id,
             draft=result,

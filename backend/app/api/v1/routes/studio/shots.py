@@ -41,10 +41,16 @@ from app.services.studio.shots import (
     update as update_shot_service,
 )
 from app.services.studio import (
+    accept_shot_extracted_dialogue_candidate,
     get_shot_assets_overview,
     ignore_shot_extracted_candidate,
+    ignore_shot_extracted_dialogue_candidate,
     link_shot_extracted_candidate,
     list_shot_extracted_candidates,
+    list_shot_extracted_dialogue_candidates,
+    get_shot_video_readiness,
+    list_shot_runtime_summary_by_chapter,
+    render_shot_video_prompt_preview,
     set_skip_extraction,
 )
 from app.schemas.common import ApiResponse, PaginatedData, created_response, empty_response, success_response
@@ -65,6 +71,7 @@ from app.schemas.studio.shots import (
     ShotDialogLineUpdate,
     ProjectPropLinkRead,
     ShotRead,
+    ShotRuntimeSummaryRead,
     ProjectSceneLinkRead,
     ShotUpdate,
     ShotFrameImageCreate,
@@ -72,7 +79,11 @@ from app.schemas.studio.shots import (
     ShotFrameImageUpdate,
     ShotExtractedCandidateLinkRequest,
     ShotExtractedCandidateRead,
+    ShotExtractedDialogueCandidateAcceptRequest,
+    ShotExtractedDialogueCandidateRead,
     ShotSkipExtractionUpdate,
+    ShotVideoReadinessRead,
+    ShotVideoPromptPreviewRead,
 )
 
 router = APIRouter()
@@ -132,6 +143,19 @@ async def create_shot(
 
 
 @router.get(
+    "/runtime-summary",
+    response_model=ApiResponse[list[ShotRuntimeSummaryRead]],
+    summary="按章节获取镜头运行时任务态摘要",
+)
+async def list_shot_runtime_summary(
+    chapter_id: str = Query(..., description="章节 ID"),
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse[list[ShotRuntimeSummaryRead]]:
+    rows = await list_shot_runtime_summary_by_chapter(db, chapter_id=chapter_id)
+    return success_response(rows)
+
+
+@router.get(
     "/{shot_id}/extraction-draft",
     response_model=ApiResponse[StudioScriptExtractionDraft],
     summary="分镜详情：按镜头关联拼装 StudioScriptExtractionDraft",
@@ -158,6 +182,19 @@ async def get_shot_extracted_candidates(
 
 
 @router.get(
+    "/{shot_id}/extracted-dialogue-candidates",
+    response_model=ApiResponse[list[ShotExtractedDialogueCandidateRead]],
+    summary="获取镜头提取对白候选项",
+)
+async def get_shot_extracted_dialogue_candidates(
+    shot_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse[list[ShotExtractedDialogueCandidateRead]]:
+    rows = await list_shot_extracted_dialogue_candidates(db, shot_id=shot_id)
+    return success_response([ShotExtractedDialogueCandidateRead.model_validate(row) for row in rows])
+
+
+@router.get(
     "/{shot_id}/assets-overview",
     response_model=ApiResponse[ShotAssetsOverviewRead],
     summary="获取镜头资产总览（已关联资产 + 提取候选）",
@@ -167,6 +204,34 @@ async def get_shot_assets_overview_api(
     db: AsyncSession = Depends(get_db),
 ) -> ApiResponse[ShotAssetsOverviewRead]:
     data = await get_shot_assets_overview(db, shot_id=shot_id)
+    return success_response(data)
+
+
+@router.get(
+    "/{shot_id}/video-prompt-preview",
+    response_model=ApiResponse[ShotVideoPromptPreviewRead],
+    summary="预览镜头视频提示词",
+)
+async def preview_shot_video_prompt(
+    shot_id: str,
+    template_id: str | None = Query(None, description="指定视频提示词模板 ID；不传则使用默认模板"),
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse[ShotVideoPromptPreviewRead]:
+    data = await render_shot_video_prompt_preview(db, shot_id=shot_id, template_id=template_id)
+    return success_response(data)
+
+
+@router.get(
+    "/{shot_id}/video-readiness",
+    response_model=ApiResponse[ShotVideoReadinessRead],
+    summary="获取镜头视频生成准备度",
+)
+async def get_shot_video_readiness_api(
+    shot_id: str,
+    reference_mode: str = Query("text_only", description="参考模式：first/last/key/first_last/first_last_key/text_only"),
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse[ShotVideoReadinessRead]:
+    data = await get_shot_video_readiness(db, shot_id=shot_id, reference_mode=reference_mode)
     return success_response(data)
 
 
@@ -213,6 +278,33 @@ async def ignore_extracted_candidate(
 ) -> ApiResponse[ShotExtractedCandidateRead]:
     row = await ignore_shot_extracted_candidate(db, candidate_id=candidate_id)
     return success_response(ShotExtractedCandidateRead.model_validate(row))
+
+
+@router.patch(
+    "/extracted-dialogue-candidates/{candidate_id}/accept",
+    response_model=ApiResponse[ShotExtractedDialogueCandidateRead],
+    summary="接受镜头提取对白候选项",
+)
+async def accept_extracted_dialogue_candidate(
+    candidate_id: int,
+    body: ShotExtractedDialogueCandidateAcceptRequest | None = None,
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse[ShotExtractedDialogueCandidateRead]:
+    row = await accept_shot_extracted_dialogue_candidate(db, candidate_id=candidate_id, body=body)
+    return success_response(ShotExtractedDialogueCandidateRead.model_validate(row))
+
+
+@router.patch(
+    "/extracted-dialogue-candidates/{candidate_id}/ignore",
+    response_model=ApiResponse[ShotExtractedDialogueCandidateRead],
+    summary="忽略镜头提取对白候选项",
+)
+async def ignore_extracted_dialogue_candidate(
+    candidate_id: int,
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse[ShotExtractedDialogueCandidateRead]:
+    row = await ignore_shot_extracted_dialogue_candidate(db, candidate_id=candidate_id)
+    return success_response(ShotExtractedDialogueCandidateRead.model_validate(row))
 
 
 @router.get(

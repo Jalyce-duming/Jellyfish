@@ -35,7 +35,6 @@ class ShotStatus(str, Enum):
     """镜头生成状态（更多是“生产流程”而非剧情状态）。"""
 
     pending = "pending"
-    generating = "generating"
     ready = "ready"
 
 
@@ -53,6 +52,14 @@ class ShotCandidateStatus(str, Enum):
 
     pending = "pending"
     linked = "linked"
+    ignored = "ignored"
+
+
+class ShotDialogueCandidateStatus(str, Enum):
+    """镜头对白提取候选确认状态。"""
+
+    pending = "pending"
+    accepted = "accepted"
     ignored = "ignored"
 
 

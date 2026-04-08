@@ -9,6 +9,7 @@ import {
   Layout,
   Modal,
   Popconfirm,
+  Segmented,
   Space,
   Table,
   Tag,
@@ -27,12 +28,13 @@ import {
   ScissorOutlined,
   VideoCameraOutlined,
 } from '@ant-design/icons'
-import type { ShotRead, ShotStatus } from '../../../services/generated'
+import type { ShotRead, ShotRuntimeSummaryRead, ShotStatus } from '../../../services/generated'
 import { ScriptProcessingService, StudioChaptersService, StudioShotsService } from '../../../services/generated'
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 import { getChapterShotEditPath, getChapterStudioPath } from '../project/ProjectWorkbench/routes'
 
 const { Header, Content } = Layout
+type ShotListFilter = 'all' | 'pending' | 'generating' | 'ready'
 
 function getErrorMessage(e: unknown) {
   if (!e) return '请求失败'
@@ -49,8 +51,7 @@ function getErrorMessage(e: unknown) {
 
 function statusTag(status?: ShotStatus) {
   if (!status) return <span className="text-gray-400">—</span>
-  const color =
-    status === 'ready' ? 'success' : status === 'generating' ? 'processing' : 'default'
+  const color = status === 'ready' ? 'success' : 'default'
   return <Tag color={color}>{status}</Tag>
 }
 
@@ -60,12 +61,20 @@ type ShotPreparationState = {
   hint: string
 }
 
-function getShotPreparationState(shot: ShotRead): ShotPreparationState {
-  if (shot.status === 'generating') {
+type ShotRuntimeState = {
+  has_active_tasks: boolean
+  has_active_video_tasks: boolean
+  has_active_prompt_tasks: boolean
+  has_active_frame_tasks: boolean
+  active_task_count: number
+}
+
+function getShotPreparationState(shot: ShotRead, runtime?: ShotRuntimeState): ShotPreparationState {
+  if (runtime?.has_active_tasks) {
     return {
       text: '生成中',
       color: 'processing',
-      hint: '镜头相关生成任务仍在进行中',
+      hint: `当前镜头有 ${runtime.active_task_count} 个运行中任务`,
     }
   }
   if (shot.status === 'ready') {
@@ -92,7 +101,9 @@ export function ChapterShotsPage() {
   const [loading, setLoading] = useState(false)
   const [extracting, setExtracting] = useState(false)
   const [shots, setShots] = useState<ShotRead[]>([])
+  const [shotRuntimeMap, setShotRuntimeMap] = useState<Record<string, ShotRuntimeState>>({})
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])
+  const [listFilter, setListFilter] = useState<ShotListFilter>('all')
   const [searchText, setSearchText] = useState('')
   const [chapterTitle, setChapterTitle] = useState<string>('')
   const [chapterIndex, setChapterIndex] = useState<number | null>(null)
@@ -109,14 +120,34 @@ export function ChapterShotsPage() {
     if (!chapterId) return
     setLoading(true)
     try {
-      const res = await StudioShotsService.listShotsApiV1StudioShotsGet({
-        chapterId,
-        page: 1,
-        pageSize: 100,
-        order: 'index',
-        isDesc: false,
-      })
+      const [res, runtimeRes] = await Promise.all([
+        StudioShotsService.listShotsApiV1StudioShotsGet({
+          chapterId,
+          page: 1,
+          pageSize: 100,
+          order: 'index',
+          isDesc: false,
+        }),
+        StudioShotsService.listShotRuntimeSummaryApiV1StudioShotsRuntimeSummaryGet({
+          chapterId,
+        }),
+      ])
       setShots(res.data?.items ?? [])
+      const runtimeItems: ShotRuntimeSummaryRead[] = runtimeRes.data ?? []
+      setShotRuntimeMap(
+        Object.fromEntries(
+          runtimeItems.map((item) => [
+            item.shot_id,
+            {
+              has_active_tasks: item.has_active_tasks,
+              has_active_video_tasks: item.has_active_video_tasks,
+              has_active_prompt_tasks: item.has_active_prompt_tasks,
+              has_active_frame_tasks: item.has_active_frame_tasks,
+              active_task_count: item.active_task_count,
+            },
+          ]),
+        ),
+      )
       setSelectedRowKeys([])
     } catch {
       message.error('加载分镜失败')
@@ -152,14 +183,31 @@ export function ChapterShotsPage() {
 
   const filteredShots = useMemo(() => {
     const q = searchText.trim().toLowerCase()
-    if (!q) return shots
-    return shots.filter((s) => {
+    const byWorkflow = shots.filter((s) => {
+      const runtime = shotRuntimeMap[s.id]
+      if (listFilter === 'generating') return Boolean(runtime?.has_active_tasks)
+      if (listFilter === 'ready') return s.status === 'ready' && !runtime?.has_active_tasks
+      if (listFilter === 'pending') return s.status !== 'ready' && !runtime?.has_active_tasks
+      return true
+    })
+    if (!q) return byWorkflow
+    return byWorkflow.filter((s) => {
       const title = String(s.title ?? '').toLowerCase()
       const ex = String(s.script_excerpt ?? '').toLowerCase()
       const idx = String(s.index)
       return title.includes(q) || ex.includes(q) || idx.includes(q)
     })
-  }, [shots, searchText])
+  }, [listFilter, searchText, shotRuntimeMap, shots])
+
+  const shotFilterCounts = useMemo(
+    () => ({
+      all: shots.length,
+      pending: shots.filter((s) => s.status !== 'ready' && !shotRuntimeMap[s.id]?.has_active_tasks).length,
+      generating: shots.filter((s) => Boolean(shotRuntimeMap[s.id]?.has_active_tasks)).length,
+      ready: shots.filter((s) => s.status === 'ready' && !shotRuntimeMap[s.id]?.has_active_tasks).length,
+    }),
+    [shotRuntimeMap, shots],
+  )
 
   const selectedShotIds = useMemo(() => selectedRowKeys.map((k) => String(k)), [selectedRowKeys])
 
@@ -276,6 +324,16 @@ export function ChapterShotsPage() {
     }
   }, [selectedShotIds])
 
+  const handleOpenSelectedInStudio = useCallback(() => {
+    if (!projectId || !chapterId || selectedShotIds.length === 0) return
+    navigate(getChapterStudioPath(projectId, chapterId), {
+      state: {
+        focusShotId: selectedShotIds[0],
+        selectedShotIds,
+      },
+    })
+  }, [chapterId, navigate, projectId, selectedShotIds])
+
   const columns: TableColumnsType<ShotRead> = useMemo(
     () => [
       {
@@ -312,7 +370,7 @@ export function ChapterShotsPage() {
         key: 'preparation',
         width: 168,
         render: (_: unknown, r) => {
-          const state = getShotPreparationState(r)
+          const state = getShotPreparationState(r, shotRuntimeMap[r.id])
           return (
             <div className="space-y-1">
               <Tag color={state.color}>{state.text}</Tag>
@@ -380,7 +438,7 @@ export function ChapterShotsPage() {
         ),
       },
     ],
-    [chapterId, deletingId, extracting, handleDelete, navigate, projectId],
+    [chapterId, deletingId, extracting, handleDelete, navigate, projectId, shotRuntimeMap],
   )
 
   const tableEmpty =
@@ -539,6 +597,37 @@ export function ChapterShotsPage() {
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
             />
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <Segmented
+                size="small"
+                value={listFilter}
+                onChange={(value) => setListFilter(value as ShotListFilter)}
+                options={[
+                  { label: `全部 ${shotFilterCounts.all}`, value: 'all' },
+                  { label: `待确认 ${shotFilterCounts.pending}`, value: 'pending' },
+                  { label: `生成中 ${shotFilterCounts.generating}`, value: 'generating' },
+                  { label: `已就绪 ${shotFilterCounts.ready}`, value: 'ready' },
+                ]}
+              />
+              {selectedRowKeys.length > 0 ? (
+                <Space size="small" wrap>
+                  <Button
+                    icon={<FileSearchOutlined />}
+                    disabled={extracting || batchDeleting}
+                    onClick={handleOpenSelectedInStudio}
+                  >
+                    处理首个已选
+                  </Button>
+                  <Button
+                    type="text"
+                    disabled={extracting || batchDeleting}
+                    onClick={() => setSelectedRowKeys([])}
+                  >
+                    清空选择
+                  </Button>
+                </Space>
+              ) : null}
+            </div>
             <div className="flex-1 min-h-0">
               <Table<ShotRead>
                 rowKey="id"

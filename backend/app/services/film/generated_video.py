@@ -24,6 +24,7 @@ from app.models.types import FileUsageKind
 from app.services.common import entity_not_found
 from app.services.studio.file_usages import sync_usage_from_shot_context
 from app.services.studio import recompute_shot_status
+from app.services.studio.shot_video_prompt_pack import render_shot_video_prompt_preview
 from app.utils.files import create_file_from_url_or_b64
 
 REQUIRED_FRAMES_BY_MODE: dict[str, tuple[ShotFrameType, ...]] = {
@@ -139,9 +140,12 @@ async def preview_prompt_and_images(
         ),
         "text_only": "",
     }
-    final_prompt = (prompt or "").strip() or prompt_by_mode[reference_mode]
-    if reference_mode == "text_only" and not final_prompt:
-        raise HTTPException(status_code=400, detail="prompt is required when reference_mode=text_only")
+    final_prompt = (prompt or "").strip()
+    if not final_prompt:
+        preview = await render_shot_video_prompt_preview(db, shot_id=shot_id)
+        final_prompt = preview.rendered_prompt.strip() or prompt_by_mode[reference_mode]
+    if not final_prompt:
+        raise HTTPException(status_code=400, detail="prompt is required")
 
     image_ids = [str(frame_map[ft].file_id) for ft in required_frames if frame_map.get(ft) and frame_map[ft].file_id]
     return final_prompt, image_ids, shot_detail
@@ -212,6 +216,11 @@ async def build_run_args(
     validate_images_count(reference_mode, images)
 
     final_prompt = (prompt or "").strip()
+    prompt_preview_payload: dict | None = None
+    if not final_prompt:
+        preview = await render_shot_video_prompt_preview(db, shot_id=shot_id)
+        final_prompt = preview.rendered_prompt.strip()
+        prompt_preview_payload = preview.model_dump()
     if not final_prompt:
         raise HTTPException(status_code=400, detail="prompt is required")
 
@@ -219,7 +228,7 @@ async def build_run_args(
     frame_data_urls = [await file_id_to_data_url(db, file_id=file_id) for file_id in images]
     frame_map = {ft: frame_data_urls[i] for i, ft in enumerate(required_frames)}
 
-    return {
+    run_args = {
         "shot_id": shot_id,
         "provider": provider_cfg.provider,
         "api_key": provider_cfg.api_key,
@@ -234,6 +243,9 @@ async def build_run_args(
             "seconds": shot_detail.duration,
         },
     }
+    if prompt_preview_payload is not None:
+        run_args["prompt_preview"] = prompt_preview_payload
+    return run_args
 
 
 async def persist_generated_video_to_shot(

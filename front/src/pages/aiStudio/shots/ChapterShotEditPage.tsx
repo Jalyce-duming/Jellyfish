@@ -1,15 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Button, Card, Divider, Empty, Input, Layout, List, Modal, Popconfirm, Spin, Tag, Tooltip, Typography, message } from 'antd'
-import { ArrowLeftOutlined, DeleteOutlined, FireOutlined, PlusOutlined, SaveOutlined, SmileOutlined } from '@ant-design/icons'
+import { Button, Card, Divider, Empty, Layout, List, Modal, Spin, Typography, message } from 'antd'
+import { ArrowLeftOutlined } from '@ant-design/icons'
 import type {
   EntityNameExistenceItem,
   ShotAssetOverviewItem,
   ShotAssetsOverviewRead,
-  ShotDialogLineCreate,
   ShotDialogLineRead,
   ShotDialogLineUpdate,
+  ShotExtractedDialogueCandidateRead,
   ShotRead,
-  StudioShotDraftDialogueLine,
 } from '../../../services/generated'
 import {
   ScriptProcessingService,
@@ -22,8 +21,12 @@ import {
   StudioShotLinksService,
 } from '../../../services/generated'
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
-import { getChapterShotsPath } from '../project/ProjectWorkbench/routes'
+import { getChapterShotsPath, getChapterStudioPath } from '../project/ProjectWorkbench/routes'
 import { DisplayImageCard } from '../assets/components/DisplayImageCard'
+import { ChapterShotAssetConfirmation } from './components/ChapterShotAssetConfirmation'
+import { ChapterShotBasicInfoSection } from './components/ChapterShotBasicInfoSection'
+import { ChapterShotDialogueConfirmation } from './components/ChapterShotDialogueConfirmation'
+import { ChapterShotPreparationGuide } from './components/ChapterShotPreparationGuide'
 import { StudioEntitiesApi } from '../../../services/studioEntities'
 import { resolveAssetUrl } from '../assets/utils'
 
@@ -36,21 +39,6 @@ type AssetVM = NamedDraft & {
   status: 'linked' | 'new'
   candidateId?: number
   candidateStatus?: ShotAssetOverviewItem['candidate_status']
-}
-type ExtractedDialogLineVM = StudioShotDraftDialogueLine & { __key: string }
-
-function dialogTitle(speaker?: string | null, target?: string | null) {
-  const s = (speaker ?? '').trim() || '未知'
-  const t = (target ?? '').trim() || '未知'
-  return `${s} → ${t}`
-}
-
-function assetDetailUrl(kind: AssetKind, id: string, projectId: string) {
-  if (kind === 'scene') return `/assets/scenes/${encodeURIComponent(id)}/edit`
-  if (kind === 'prop') return `/assets/props/${encodeURIComponent(id)}/edit`
-  if (kind === 'costume') return `/assets/costumes/${encodeURIComponent(id)}/edit`
-  // actor/角色：跳转项目角色编辑页（character）
-  return `/projects/${encodeURIComponent(projectId)}/roles/${encodeURIComponent(id)}/edit`
 }
 
 function overviewTypeToAssetKind(kind: ShotAssetOverviewItem['type']): AssetKind {
@@ -105,9 +93,8 @@ export function ChapterShotEditPage() {
 
   const [dialogLoading, setDialogLoading] = useState(false)
   const [savedDialogLines, setSavedDialogLines] = useState<ShotDialogLineRead[]>([])
-  const [extractedDialogLines, setExtractedDialogLines] = useState<ExtractedDialogLineVM[]>([])
+  const [extractedDialogLines, setExtractedDialogLines] = useState<ShotExtractedDialogueCandidateRead[]>([])
   const [dialogDeletingIds, setDialogDeletingIds] = useState<Record<number, boolean>>({})
-  const [dialogSavingIds, setDialogSavingIds] = useState<Record<number, boolean>>({})
   const [dialogAddingKeys, setDialogAddingKeys] = useState<Record<string, boolean>>({})
   const [batchDialogAdding, setBatchDialogAdding] = useState(false)
   const [candidateActionIds, setCandidateActionIds] = useState<Record<number, boolean>>({})
@@ -266,12 +253,37 @@ export function ChapterShotEditPage() {
     }
   }, [shotId])
 
+  const loadDialogueCandidates = useCallback(async () => {
+    if (!shotId) return
+    try {
+      const res = await StudioShotsService.getShotExtractedDialogueCandidatesApiV1StudioShotsShotIdExtractedDialogueCandidatesGet({
+        shotId,
+      })
+      setExtractedDialogLines((res.data ?? []).filter((item) => item.candidate_status === 'pending'))
+    } catch {
+      message.error('对白候选加载失败')
+      setExtractedDialogLines([])
+    }
+  }, [shotId])
+
+  const refreshCurrentShot = useCallback(async () => {
+    if (!shotId) return
+    try {
+      const res = await StudioShotsService.getShotApiV1StudioShotsShotIdGet({ shotId })
+      const next = res.data ?? null
+      if (!next) return
+      setShot(next)
+      setShots((prev) => prev.map((item) => (item.id === next.id ? next : item)))
+    } catch {
+      // 状态刷新失败不阻塞候选操作；下一次页面加载会重新同步。
+    }
+  }, [shotId])
+
   const scheduleSaveDialogLine = useCallback(
     (lineId: number, patch: ShotDialogLineUpdate) => {
       const prev = dialogDebounceTimersRef.current.get(lineId)
       if (prev) window.clearTimeout(prev)
       const timer = window.setTimeout(async () => {
-        setDialogSavingIds((m) => ({ ...m, [lineId]: true }))
         try {
           await StudioShotDialogLinesService.updateShotDialogLineApiV1StudioShotDialogLinesLineIdPatch({
             lineId,
@@ -279,8 +291,6 @@ export function ChapterShotEditPage() {
           })
         } catch {
           message.error('对白保存失败')
-        } finally {
-          setDialogSavingIds((m) => ({ ...m, [lineId]: false }))
         }
       }, 1000)
       dialogDebounceTimersRef.current.set(lineId, timer)
@@ -316,90 +326,130 @@ export function ChapterShotEditPage() {
     [dialogDeletingIds],
   )
 
-  const updateExtractedDialogText = useCallback((key: string, text: string) => {
-    setExtractedDialogLines((prev) => prev.map((l) => (l.__key === key ? { ...l, text } : l)))
+  const updateExtractedDialogText = useCallback((candidateId: number, text: string) => {
+    setExtractedDialogLines((prev) => prev.map((l) => (l.id === candidateId ? { ...l, text } : l)))
   }, [])
 
-  const createDialogLine = useCallback(
-    async (line: ExtractedDialogLineVM, options?: { silent?: boolean }) => {
-      if (!shotId) return null
+  const acceptExtractedDialogLine = useCallback(
+    async (line: ShotExtractedDialogueCandidateRead, options?: { silent?: boolean }) => {
       const text = (line.text ?? '').trim()
       if (!text) {
         if (!options?.silent) message.warning('请先填写对白内容')
         return null
       }
-      const maxIndex = savedDialogLines.reduce((m, it) => Math.max(m, typeof it.index === 'number' ? it.index : -1), -1)
-      const index = typeof line.index === 'number' ? line.index : maxIndex + 1
-      const body: ShotDialogLineCreate = {
-        shot_detail_id: shotId,
-        index,
-        text,
-        line_mode: line.line_mode,
-        speaker_name: line.speaker_name ?? null,
-        target_name: line.target_name ?? null,
-      }
-      const res = await StudioShotDialogLinesService.createShotDialogLineApiV1StudioShotDialogLinesPost({ requestBody: body })
+      const res = await StudioShotsService.acceptExtractedDialogueCandidateApiV1StudioShotsExtractedDialogueCandidatesCandidateIdAcceptPatch({
+        candidateId: line.id,
+        requestBody: {
+          index: line.index,
+          text,
+          line_mode: line.line_mode,
+          speaker_name: line.speaker_name ?? null,
+          target_name: line.target_name ?? null,
+        },
+      })
       return res.data ?? null
     },
-    [savedDialogLines, shotId],
+    [],
   )
 
   const addExtractedDialogLine = useCallback(
-    async (line: ExtractedDialogLineVM) => {
-      if (dialogAddingKeys[line.__key]) return
-      setDialogAddingKeys((m) => ({ ...m, [line.__key]: true }))
+    async (line: ShotExtractedDialogueCandidateRead) => {
+      const loadingKey = String(line.id)
+      if (dialogAddingKeys[loadingKey]) return
+      setDialogAddingKeys((m) => ({ ...m, [loadingKey]: true }))
       try {
-        const created = await createDialogLine(line)
+        const created = await acceptExtractedDialogLine(line)
         if (created) {
-          setSavedDialogLines((prev) => [...prev, created].sort((a, b) => (a.index ?? 0) - (b.index ?? 0)))
-          setExtractedDialogLines((prev) => prev.filter((x) => x.__key !== line.__key))
-          message.success('已添加')
+          await loadDialogLines()
+          await loadDialogueCandidates()
+          await refreshCurrentShot()
+          message.success('已接受')
         }
       } catch {
-        message.error('添加失败')
+        message.error('接受失败')
       } finally {
-        setDialogAddingKeys((m) => ({ ...m, [line.__key]: false }))
+        setDialogAddingKeys((m) => ({ ...m, [loadingKey]: false }))
       }
     },
-    [createDialogLine, dialogAddingKeys],
+    [acceptExtractedDialogLine, dialogAddingKeys, loadDialogLines, loadDialogueCandidates, refreshCurrentShot],
   )
 
   const acceptAllExtractedDialogLines = useCallback(async () => {
     if (batchDialogAdding || extractedDialogLines.length === 0) return
     setBatchDialogAdding(true)
     try {
-      const accepted: ShotDialogLineRead[] = []
-      const remaining: ExtractedDialogLineVM[] = []
+      let acceptedCount = 0
       for (const line of extractedDialogLines) {
         try {
-          const created = await createDialogLine(line, { silent: true })
-          if (created) accepted.push(created)
-          else remaining.push(line)
+          const accepted = await acceptExtractedDialogLine(line, { silent: true })
+          if (accepted) acceptedCount += 1
         } catch {
-          remaining.push(line)
+          // 逐条容错，最后统一反馈。
         }
       }
-      if (accepted.length > 0) {
-        setSavedDialogLines((prev) => [...prev, ...accepted].sort((a, b) => (a.index ?? 0) - (b.index ?? 0)))
-      }
-      setExtractedDialogLines(remaining)
-      if (accepted.length === extractedDialogLines.length) {
-        message.success(`已接受 ${accepted.length} 条对白`)
-      } else if (accepted.length > 0) {
-        message.warning(`已接受 ${accepted.length} 条，对剩余 ${remaining.length} 条请逐条检查`)
+      await loadDialogLines()
+      await loadDialogueCandidates()
+      await refreshCurrentShot()
+      if (acceptedCount === extractedDialogLines.length) {
+        message.success(`已接受 ${acceptedCount} 条对白`)
+      } else if (acceptedCount > 0) {
+        message.warning(`已接受 ${acceptedCount} 条，对剩余 ${extractedDialogLines.length - acceptedCount} 条请逐条检查`)
       } else {
         message.error('批量接受失败')
       }
     } finally {
       setBatchDialogAdding(false)
     }
-  }, [batchDialogAdding, createDialogLine, extractedDialogLines])
+  }, [acceptExtractedDialogLine, batchDialogAdding, extractedDialogLines, loadDialogLines, loadDialogueCandidates, refreshCurrentShot])
 
-  const ignoreAllExtractedDialogLines = useCallback(() => {
+  const ignoreExtractedDialogLine = useCallback(
+    async (line: ShotExtractedDialogueCandidateRead, options?: { silent?: boolean }) => {
+      const loadingKey = String(line.id)
+      if (dialogAddingKeys[loadingKey]) return
+      setDialogAddingKeys((m) => ({ ...m, [loadingKey]: true }))
+      try {
+        await StudioShotsService.ignoreExtractedDialogueCandidateApiV1StudioShotsExtractedDialogueCandidatesCandidateIdIgnorePatch({
+          candidateId: line.id,
+        })
+        await loadDialogueCandidates()
+        await refreshCurrentShot()
+        if (!options?.silent) message.success('已忽略')
+      } catch {
+        if (!options?.silent) message.error('忽略失败')
+        throw new Error('ignore failed')
+      } finally {
+        setDialogAddingKeys((m) => ({ ...m, [loadingKey]: false }))
+      }
+    },
+    [dialogAddingKeys, loadDialogueCandidates, refreshCurrentShot],
+  )
+
+  const ignoreAllExtractedDialogLines = useCallback(async () => {
     if (batchDialogAdding || extractedDialogLines.length === 0) return
-    setExtractedDialogLines([])
-    message.success('已忽略本轮提取对白')
-  }, [batchDialogAdding, extractedDialogLines.length])
+    setBatchDialogAdding(true)
+    try {
+      let ignoredCount = 0
+      for (const line of extractedDialogLines) {
+        try {
+          await ignoreExtractedDialogLine(line, { silent: true })
+          ignoredCount += 1
+        } catch {
+          // 逐条容错，最后统一反馈。
+        }
+      }
+      await loadDialogueCandidates()
+      await refreshCurrentShot()
+      if (ignoredCount === extractedDialogLines.length) {
+        message.success(`已忽略 ${ignoredCount} 条对白`)
+      } else if (ignoredCount > 0) {
+        message.warning(`已忽略 ${ignoredCount} 条，对剩余 ${extractedDialogLines.length - ignoredCount} 条请逐条检查`)
+      } else {
+        message.error('批量忽略失败')
+      }
+    } finally {
+      setBatchDialogAdding(false)
+    }
+  }, [batchDialogAdding, extractedDialogLines, ignoreExtractedDialogLine, loadDialogueCandidates, refreshCurrentShot])
 
   useEffect(() => {
     void loadPage()
@@ -413,6 +463,7 @@ export function ChapterShotEditPage() {
   useEffect(() => {
     clearDialogDebounceTimers()
     void loadDialogLines()
+    void loadDialogueCandidates()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shotId])
 
@@ -497,37 +548,18 @@ export function ChapterShotEditPage() {
           chapter_id: chapterId,
           script_division: scriptDivision as any,
           consistency: undefined,
-          refresh_cache: false,
+          refresh_cache: true,
         } as any,
       })
       const next = res.data
       if (next) {
-        const extractedLines = ((next.shots?.[0] as any)?.dialogue_lines ?? []) as StudioShotDraftDialogueLine[]
-        const savedKeys = new Set(
-          savedDialogLines.map((l) => `${(l.speaker_name ?? '').trim()}|${(l.target_name ?? '').trim()}|${(l.text ?? '').trim()}`),
-        )
-        const nextVM: ExtractedDialogLineVM[] = extractedLines
-          .filter((l) => l?.text?.trim())
-          .filter((l) => !savedKeys.has(`${(l.speaker_name ?? '').trim()}|${(l.target_name ?? '').trim()}|${(l.text ?? '').trim()}`))
-          .map((l, i) => ({ ...l, __key: `${Date.now()}-${i}-${Math.random().toString(16).slice(2)}` }))
-        setExtractedDialogLines((prev) => {
-          const prevKeys = new Set(
-            prev.map((l) => `${(l.speaker_name ?? '').trim()}|${(l.target_name ?? '').trim()}|${(l.text ?? '').trim()}`),
-          )
-          const merged = [...prev]
-          for (const l of nextVM) {
-            const k = `${(l.speaker_name ?? '').trim()}|${(l.target_name ?? '').trim()}|${(l.text ?? '').trim()}`
-            if (prevKeys.has(k)) continue
-            merged.push(l)
-          }
-          return merged
-        })
         if (res.meta?.from_cache) {
           message.success('已从缓存加载提取结果；页面会优先展示数据表中的待确认候选')
         } else {
           message.success('提取完成；页面会优先展示数据表中的待确认候选')
         }
         await loadAssetsOverview()
+        await loadDialogueCandidates()
       } else {
         message.error(res.message || '提取失败')
       }
@@ -537,7 +569,7 @@ export function ChapterShotEditPage() {
       setExtractingAssets(false)
       extractInFlightRef.current = false
     }
-  }, [chapterId, loadAssetsOverview, projectId, savedDialogLines, shot])
+  }, [chapterId, loadAssetsOverview, loadDialogueCandidates, projectId, shot])
 
   const goShot = (id: string) => {
     if (!projectId || !chapterId || id === shotId) return
@@ -767,140 +799,6 @@ export function ChapterShotEditPage() {
     void prefetchExistenceForNewAssets('costume', unionAssets.costume)
   }, [prefetchExistenceForNewAssets, unionAssets])
 
-  const renderAssetCard = (asset: AssetVM) => {
-    const existence = existenceByKindName[asset.kind][asset.name]
-    const actionLabel = existence ? (existence.exists ? '关联' : '新建') : '…'
-    const candidateBusy = asset.candidateId ? !!candidateActionIds[asset.candidateId] : false
-    const footer =
-      asset.status === 'new' ? (
-        <div className="flex items-center justify-between gap-2">
-          <div className="text-[11px] text-gray-500 truncate">
-            {existence
-              ? existence.linked_to_project
-                ? '项目内可关联'
-                : existence.exists
-                  ? '资产库已有'
-                  : '需新建'
-              : '正在检查…'}
-          </div>
-          <div className="flex items-center gap-1">
-            {asset.candidateId ? (
-              <Button
-                size="small"
-                type="text"
-                danger
-                loading={candidateBusy}
-                onClick={() => void ignoreCandidate(asset)}
-              >
-                忽略
-              </Button>
-            ) : null}
-            <Button size="small" disabled={!existence || candidateBusy} onClick={() => void handleNewAsset(asset)}>
-              {actionLabel}
-            </Button>
-          </div>
-        </div>
-      ) : (
-        <div className="text-[11px] text-gray-500">当前镜头已关联</div>
-      )
-    return (
-      <div key={`${asset.kind}:${asset.name}`} className="col-span-12 md:col-span-6 xl:col-span-3 2xl:col-span-2">
-        <DisplayImageCard
-          title={
-            <div className="flex items-center justify-between gap-2 min-w-0">
-              <div className="min-w-0">
-                {asset.id ? (
-                  <Button
-                    type="link"
-                    size="small"
-                    className="!p-0 !h-auto"
-                    onClick={() =>
-                      window.open(assetDetailUrl(asset.kind, asset.id!, projectId ?? ''), '_blank', 'noopener,noreferrer')
-                    }
-                  >
-                    <span className="truncate inline-block max-w-[140px] align-bottom">{asset.name}</span>
-                  </Button>
-                ) : (
-                  <Tooltip title="该资产仅提取结果，尚未落库">
-                    <span className="truncate inline-block max-w-[140px] text-gray-400 cursor-not-allowed align-bottom">{asset.name}</span>
-                  </Tooltip>
-                )}
-              </div>
-              {asset.status === 'linked' ? <Tag color="blue">已关联</Tag> : <Tag color="magenta">新提取</Tag>}
-            </div>
-          }
-          imageUrl={resolveAssetUrl(asset.thumbnail)}
-          imageAlt={asset.name}
-          enablePreview
-          hoverable={false}
-          size="small"
-          imageHeightClassName="h-24"
-          footer={footer}
-        />
-      </div>
-    )
-  }
-
-  const renderAssetGrid = (kind: AssetKind, titleLabel: string, items: AssetVM[]) => {
-    const linkedItems = items.filter((item) => item.status === 'linked')
-    const candidateItems = items.filter((item) => item.status === 'new')
-    const expanded = expandedKinds[kind]
-    const linkedVisible = expanded ? linkedItems : linkedItems.slice(0, 6)
-    const candidateVisible = expanded ? candidateItems : candidateItems.slice(0, 6)
-    const hiddenCount = Math.max(0, linkedItems.length + candidateItems.length - linkedVisible.length - candidateVisible.length)
-    return (
-      <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
-        <div className="flex items-center justify-between gap-2">
-          <div className="text-xs text-gray-600 font-medium">
-            {titleLabel}（{items.length}）
-          </div>
-          {items.length > 12 ? (
-            <Button type="link" size="small" onClick={() => toggleExpanded(kind)}>
-              {expanded ? '收起' : `更多（+${hiddenCount}）`}
-            </Button>
-          ) : null}
-        </div>
-        {items.length === 0 ? (
-          <Empty description={`暂无${titleLabel}`} image={Empty.PRESENTED_IMAGE_SIMPLE} />
-        ) : (
-          <div className="space-y-3">
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <div className="text-[11px] font-medium text-slate-600">当前已关联（{linkedItems.length}）</div>
-                {linkedItems.length > 0 ? <Tag color="blue">当前状态</Tag> : null}
-              </div>
-              {linkedItems.length === 0 ? (
-                <div className="rounded-lg border border-dashed border-slate-200 bg-white px-3 py-4 text-xs text-slate-500">
-                  当前镜头还没有关联{titleLabel}
-                </div>
-              ) : (
-                <div className="grid grid-cols-12 gap-2">
-                  {linkedVisible.map((asset) => renderAssetCard(asset))}
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <div className="text-[11px] font-medium text-slate-600">待确认候选（{candidateItems.length}）</div>
-                {candidateItems.length > 0 ? <Tag color="magenta">待确认</Tag> : null}
-              </div>
-              {candidateItems.length === 0 ? (
-                <div className="rounded-lg border border-dashed border-slate-200 bg-white px-3 py-4 text-xs text-slate-500">
-                  当前没有待确认的{titleLabel}候选
-                </div>
-              ) : (
-                <div className="grid grid-cols-12 gap-2">
-                  {candidateVisible.map((asset) => renderAssetCard(asset))}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-    )
-  }
-
   if (!projectId || !chapterId || !shotId) {
     return <Navigate to="/projects" replace />
   }
@@ -908,9 +806,16 @@ export function ChapterShotEditPage() {
   const hasTitleAndExcerpt = !!title.trim() && !!scriptExcerpt.trim()
   const linkedAssetCount = shotAssetsOverview?.summary.linked_count ?? 0
   const pendingAssetCount = shotAssetsOverview?.summary.pending_count ?? 0
-  const assetsReady = pendingAssetCount === 0 && linkedAssetCount > 0
+  const assetsReady = !!shotAssetsOverview && pendingAssetCount === 0
   const dialogsReady = extractedDialogLines.length === 0
-  const readyToShoot = hasTitleAndExcerpt && assetsReady && dialogsReady
+  const statusReady = shot?.status === 'ready'
+  const goToStudio = () => navigate(getChapterStudioPath(projectId, chapterId), {
+    state: { focusShotId: shotId, selectedShotIds: shotId ? [shotId] : [] },
+  })
+  const nextStepTitle = statusReady ? '下一步：进入分镜工作室继续生成' : '下一步：先完成镜头准备，再进入工作室'
+  const nextStepDescription = statusReady
+    ? '当前镜头的信息提取确认已经完成，接下来更适合去分镜工作室继续关键帧、参考图、视频提示词和视频生成。'
+    : '当前镜头仍有提取候选或对白待确认。先在这里完成准备，准备完成后再进入分镜工作室继续生成。'
 
   const checklistItems = [
     {
@@ -923,7 +828,13 @@ export function ChapterShotEditPage() {
       key: 'assets',
       label: '资产',
       tone: assetsReady ? 'success' : shotAssetsOverview ? 'warning' : 'default',
-      text: assetsReady ? '关联资产已确认' : shotAssetsOverview ? `还有 ${pendingAssetCount} 项待处理` : '建议先提取并确认资产',
+      text: assetsReady
+        ? linkedAssetCount > 0
+          ? '资产候选已确认'
+          : '无资产候选或已全部忽略'
+        : shotAssetsOverview
+          ? `还有 ${pendingAssetCount} 项待处理`
+          : '建议先提取并确认资产',
     },
     {
       key: 'dialogs',
@@ -940,8 +851,10 @@ export function ChapterShotEditPage() {
     {
       key: 'shoot',
       label: '拍摄准备',
-      tone: readyToShoot ? 'success' : 'default',
-      text: readyToShoot ? '当前镜头可进入拍摄' : '请先补齐上面 3 项',
+      tone: statusReady ? 'success' : 'default',
+      text: statusReady
+        ? '已具备进入视频生成流程的前置条件'
+        : '请先完成信息提取确认',
     },
   ] as const
 
@@ -979,7 +892,7 @@ export function ChapterShotEditPage() {
             className="text-xs truncate block"
             style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
           >
-            编辑分镜
+            分镜准备与信息确认
           </Typography.Text>
         </div>
       </Header>
@@ -994,7 +907,7 @@ export function ChapterShotEditPage() {
         }}
       >
         <Card
-          title="分镜编辑"
+          title="分镜准备"
           style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
           bodyStyle={{
             padding: 12,
@@ -1060,41 +973,14 @@ export function ChapterShotEditPage() {
                 size="small"
                 title={
                   <div className="space-y-3 min-w-0">
-                    <div className="flex flex-wrap items-center gap-2 min-w-0">
-                      <span className="shrink-0">{`镜头 #${shot.index} 详情`}</span>
-                      <Input
-                        value={title}
-                        onChange={(e) => setTitle(e.target.value)}
-                        placeholder="标题"
-                        size="small"
-                        style={{ maxWidth: 520, flex: '1 1 200px' }}
-                      />
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {checklistItems.map((item) => (
-                        <div
-                          key={item.key}
-                          className="rounded-xl border px-3 py-2 bg-white/70 min-w-[180px] flex-1"
-                          style={{
-                            borderColor:
-                              item.tone === 'success'
-                                ? '#86efac'
-                                : item.tone === 'warning'
-                                  ? '#fcd34d'
-                                  : '#dbeafe',
-                            background:
-                              item.tone === 'success'
-                                ? '#f0fdf4'
-                                : item.tone === 'warning'
-                                  ? '#fffbeb'
-                                  : '#f8fafc',
-                          }}
-                        >
-                          <div className="text-[11px] text-gray-500 mb-1">{item.label}</div>
-                          <div className="text-sm font-medium text-gray-900">{item.text}</div>
-                        </div>
-                      ))}
-                    </div>
+                    <div className="font-medium">{`镜头 #${shot.index} 详情`}</div>
+                    <ChapterShotPreparationGuide
+                      statusReady={statusReady}
+                      checklistItems={checklistItems}
+                      nextStepTitle={nextStepTitle}
+                      nextStepDescription={nextStepDescription}
+                      onGoToStudio={goToStudio}
+                    />
                   </div>
                 }
                 style={{
@@ -1109,172 +995,50 @@ export function ChapterShotEditPage() {
                 bodyStyle={{ padding: 12, flex: 1, minHeight: 0, overflow: 'auto' }}
               >
                 <div className="space-y-3">
-                  <div>
-                    <div className="flex items-center justify-between gap-2 mb-1">
-                      <div className="text-xs text-gray-600">剧本摘录</div>
-                      <Button
-                        type="primary"
-                        size="small"
-                        icon={<SaveOutlined />}
-                        loading={saving}
-                        onClick={() => void saveShot()}
-                      >
-                        保存
-                      </Button>
-                    </div>
-                    <Input.TextArea
-                      value={scriptExcerpt}
-                      onChange={(e) => setScriptExcerpt(e.target.value)}
-                      autoSize={{ minRows: 4, maxRows: 14 }}
-                      placeholder="剧本摘录"
-                    />
-                  </div>
+                  <ChapterShotBasicInfoSection
+                    title={title}
+                    scriptExcerpt={scriptExcerpt}
+                    saving={saving}
+                    statusReady={statusReady}
+                    onTitleChange={setTitle}
+                    onScriptExcerptChange={setScriptExcerpt}
+                    onSave={() => void saveShot()}
+                    onGoToStudio={goToStudio}
+                  />
 
                   <Divider className="!my-2" />
-                  <div>
-                    <div className="flex items-center justify-between gap-2 mb-2">
-                      <div className="text-xs text-gray-600 font-medium">关联资产</div>
-                      <div className="flex items-center gap-2">
-                        <Button
-                          type="primary"
-                          size="small"
-                          loading={extractingAssets}
-                          onClick={() => void extractAssets()}
-                        >
-                          提取资产
-                        </Button>
-                        {shot?.skip_extraction ? (
-                          <Button
-                            size="small"
-                            loading={skipExtractionUpdating}
-                            onClick={() => void updateSkipExtraction(false)}
-                          >
-                            恢复提取
-                          </Button>
-                        ) : (
-                          <Popconfirm
-                            title="确认标记为无需提取？"
-                            description="标记后当前镜头会直接按“提取确认已完成”处理。"
-                            okText="确认"
-                            cancelText="取消"
-                            onConfirm={() => void updateSkipExtraction(true)}
-                            okButtonProps={{ danger: true, loading: skipExtractionUpdating }}
-                            cancelButtonProps={{ disabled: skipExtractionUpdating }}
-                          >
-                            <Button
-                              size="small"
-                              danger
-                              loading={skipExtractionUpdating}
-                            >
-                              无需提取
-                            </Button>
-                          </Popconfirm>
-                        )}
-                      </div>
-                    </div>
-                    {shot?.skip_extraction ? (
-                      <div className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
-                        当前镜头已标记为无需提取，系统会直接按“提取确认已完成”处理。
-                      </div>
-                    ) : null}
-                    <div className="space-y-4">
-                      {renderAssetGrid('scene', '场景', unionAssets.scene)}
-                      {renderAssetGrid('actor', '角色', unionAssets.actor)}
-                      {renderAssetGrid('prop', '道具', unionAssets.prop)}
-                      {renderAssetGrid('costume', '服装', unionAssets.costume)}
-                    </div>
-                  </div>
+                  <ChapterShotAssetConfirmation
+                    projectId={projectId}
+                    extractingAssets={extractingAssets}
+                    skipExtractionUpdating={skipExtractionUpdating}
+                    skipExtraction={!!shot?.skip_extraction}
+                    unionAssets={unionAssets}
+                    expandedKinds={expandedKinds}
+                    candidateActionIds={candidateActionIds}
+                    existenceByKindName={existenceByKindName}
+                    onExtractAssets={() => void extractAssets()}
+                    onUpdateSkipExtraction={(skip) => void updateSkipExtraction(skip)}
+                    onToggleExpanded={toggleExpanded}
+                    onIgnoreCandidate={(asset) => void ignoreCandidate(asset)}
+                    onHandleNewAsset={(asset) => void handleNewAsset(asset)}
+                  />
 
                   <Divider className="!my-2" />
-                  <div>
-                    <div className="flex items-center justify-between gap-2 mb-2">
-                      <div className="text-xs text-gray-600 font-medium">对白</div>
-                      <div className="flex items-center gap-2">
-                        {extractedDialogLines.length > 0 ? (
-                          <>
-                            <Button size="small" loading={batchDialogAdding} onClick={() => void acceptAllExtractedDialogLines()}>
-                              全部接受
-                            </Button>
-                            <Button size="small" disabled={batchDialogAdding} onClick={ignoreAllExtractedDialogLines}>
-                              全部忽略
-                            </Button>
-                          </>
-                        ) : null}
-                        {dialogLoading ? <Spin size="small" /> : null}
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      {savedDialogLines.length === 0 && extractedDialogLines.length === 0 ? (
-                        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无对白" />
-                      ) : null}
-
-                      {savedDialogLines.length > 0 ? (
-                        <div className="space-y-2">
-                          {savedDialogLines
-                            .slice()
-                            .sort((a, b) => (a.index ?? 0) - (b.index ?? 0))
-                            .map((l) => (
-                              <div key={l.id} className="flex items-start gap-2">
-                                <Tooltip title="已保存">
-                                  <span className="mt-1 text-gray-500">
-                                    <SmileOutlined />
-                                  </span>
-                                </Tooltip>
-                                <Button
-                                  type="text"
-                                  size="small"
-                                  danger
-                                  icon={<DeleteOutlined />}
-                                  loading={!!dialogDeletingIds[l.id]}
-                                  onClick={() => void deleteSavedDialogLine(l.id)}
-                                />
-                                <div className="w-36 shrink-0 text-xs text-gray-700 mt-1 truncate">
-                                  {dialogTitle(l.speaker_name, l.target_name)}
-                                </div>
-                                <Input.TextArea
-                                  value={l.text ?? ''}
-                                  onChange={(e) => updateSavedDialogText(l.id, e.target.value)}
-                                  autoSize={{ minRows: 1, maxRows: 4 }}
-                                  placeholder="对白内容"
-                                  status={dialogSavingIds[l.id] ? 'warning' : undefined}
-                                />
-                              </div>
-                            ))}
-                        </div>
-                      ) : null}
-
-                      {extractedDialogLines.length > 0 ? (
-                        <div className="space-y-2">
-                          {extractedDialogLines.map((l) => (
-                            <div key={l.__key} className="flex items-start gap-2">
-                              <Tooltip title="新提取">
-                                <span className="mt-1 text-red-600">
-                                  <FireOutlined />
-                                </span>
-                              </Tooltip>
-                              <Button
-                                type="text"
-                                size="small"
-                                icon={<PlusOutlined />}
-                                loading={!!dialogAddingKeys[l.__key]}
-                                onClick={() => void addExtractedDialogLine(l)}
-                              />
-                              <div className="w-36 shrink-0 text-xs text-gray-700 mt-1 truncate">
-                                {dialogTitle(l.speaker_name, l.target_name)}
-                              </div>
-                              <Input.TextArea
-                                value={l.text ?? ''}
-                                onChange={(e) => updateExtractedDialogText(l.__key, e.target.value)}
-                                autoSize={{ minRows: 1, maxRows: 4 }}
-                                placeholder="对白内容"
-                              />
-                            </div>
-                          ))}
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
+                  <ChapterShotDialogueConfirmation
+                    savedDialogLines={savedDialogLines}
+                    extractedDialogLines={extractedDialogLines}
+                    batchDialogAdding={batchDialogAdding}
+                    dialogLoading={dialogLoading}
+                    dialogDeletingIds={dialogDeletingIds}
+                    dialogAddingKeys={dialogAddingKeys}
+                    onAcceptAll={() => void acceptAllExtractedDialogLines()}
+                    onIgnoreAll={() => void ignoreAllExtractedDialogLines()}
+                    onDeleteSavedDialogLine={(lineId) => void deleteSavedDialogLine(lineId)}
+                    onUpdateSavedDialogText={updateSavedDialogText}
+                    onAddExtractedDialogLine={(line) => void addExtractedDialogLine(line)}
+                    onIgnoreExtractedDialogLine={(line) => void ignoreExtractedDialogLine(line)}
+                    onUpdateExtractedDialogText={updateExtractedDialogText}
+                  />
                 </div>
               </Card>
             </div>

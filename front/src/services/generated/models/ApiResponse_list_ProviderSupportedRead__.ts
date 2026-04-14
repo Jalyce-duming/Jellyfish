@@ -2,8 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { RenderedShotFramePromptRead } from './RenderedShotFramePromptRead';
-export type ApiResponse_RenderedShotFramePromptRead_ = {
+import type { ProviderSupportedRead } from './ProviderSupportedRead';
+export type ApiResponse_list_ProviderSupportedRead__ = {
     /**
      * 与 HTTP 状态码一致
      */
@@ -15,7 +15,7 @@ export type ApiResponse_RenderedShotFramePromptRead_ = {
     /**
      * 实际数据
      */
-    data?: (RenderedShotFramePromptRead | null);
+    data?: (Array<ProviderSupportedRead> | null);
     /**
      * 附加元信息
      */

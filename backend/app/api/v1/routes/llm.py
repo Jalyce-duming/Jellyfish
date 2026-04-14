@@ -16,6 +16,7 @@ from app.schemas.llm import (
     ModelUpdate,
     ProviderCreate,
     ProviderRead,
+    ProviderSupportedRead,
     ProviderUpdate,
 )
 from app.services.llm.manage import (
@@ -26,6 +27,7 @@ from app.services.llm.manage import (
     get_model as get_model_service,
     get_model_settings as get_model_settings_service,
     get_provider as get_provider_service,
+    list_supported_providers as list_supported_providers_service,
     list_models_paginated,
     list_providers_paginated,
     update_model as update_model_service,
@@ -67,6 +69,18 @@ async def list_providers(
         page_size=page_size,
         allow_fields=PROVIDER_ORDER_FIELDS,
     )
+
+
+@router.get(
+    "/providers/supported",
+    response_model=ApiResponse[list[ProviderSupportedRead]],
+    summary="列出系统支持的供应商能力",
+)
+async def list_supported_providers(
+    category: ModelCategoryKey | None = Query(None, description="按模型类别过滤：text/image/video"),
+) -> ApiResponse[list[ProviderSupportedRead]]:
+    items = list_supported_providers_service(category=category)
+    return success_response(items)
 
 
 @router.post(

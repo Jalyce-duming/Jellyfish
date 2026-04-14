@@ -9,6 +9,7 @@ from app.services.llm.manage import (
     get_provider,
     list_models_paginated,
     list_providers_paginated,
+    list_supported_providers,
     update_model,
     update_model_settings,
     update_provider,
@@ -19,6 +20,20 @@ from app.services.llm.resolver import (
     get_model_by_category,
     get_provider_by_id_or_obj,
     get_provider_by_model_or_id,
+)
+from app.services.llm.provider_bootstrap import bootstrap_builtin_providers
+from app.services.llm.provider_registry import (
+    ProviderSpec,
+    get_provider_spec,
+    list_registered_providers,
+    register_many,
+    register_provider,
+    resolve_provider_key_from_name,
+)
+from app.services.llm.provider_resolver import (
+    ResolvedProviderConfig,
+    resolve_provider_config,
+    resolve_provider_config_by_model,
 )
 
 __all__ = [
@@ -36,8 +51,19 @@ __all__ = [
     "get_provider",
     "list_models_paginated",
     "list_providers_paginated",
+    "list_supported_providers",
     "update_model",
     "update_model_settings",
     "update_provider",
     "build_chat_model_from_provider",
+    "ProviderSpec",
+    "ResolvedProviderConfig",
+    "bootstrap_builtin_providers",
+    "get_provider_spec",
+    "list_registered_providers",
+    "register_many",
+    "register_provider",
+    "resolve_provider_key_from_name",
+    "resolve_provider_config",
+    "resolve_provider_config_by_model",
 ]

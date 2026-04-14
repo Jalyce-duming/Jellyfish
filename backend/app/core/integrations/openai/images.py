@@ -1,0 +1,134 @@
+"""OpenAI Images API（generations / edits）。"""
+
+from __future__ import annotations
+
+import time
+from typing import Any
+
+from app.core.integrations.http_logging import (
+    json_dumps_for_log,
+    log_image_http_request,
+    log_image_http_response,
+    safe_body_for_log_openai,
+)
+from app.core.tasks.image_generation_types import (
+    ImageGenerationInput,
+    ImageGenerationResult,
+    ImageItem,
+)
+from app.core.tasks.provider_types import ProviderConfig
+
+
+class OpenAIImageApiAdapter:
+    """OpenAI 图片生成 HTTP；无状态，可单测替换。"""
+
+    async def generate(
+        self,
+        *,
+        cfg: ProviderConfig,
+        inp: ImageGenerationInput,
+        timeout_s: float,
+    ) -> ImageGenerationResult:
+        try:
+            import httpx
+        except ImportError as e:  # pragma: no cover
+            raise RuntimeError("httpx is required for image generation tasks") from e
+
+        base_url = (cfg.base_url or "https://api.openai.com/v1").rstrip("/")
+        headers = {
+            "Authorization": f"Bearer {cfg.api_key}",
+            "Content-Type": "application/json",
+        }
+
+        async with httpx.AsyncClient(timeout=timeout_s) as client:
+            if inp.images:
+                body: dict[str, Any] = {
+                    "prompt": inp.prompt,
+                    "n": inp.n,
+                }
+                if inp.model:
+                    body["model"] = inp.model
+                if inp.size:
+                    body["size"] = inp.size
+
+                body["images"] = [
+                    {
+                        **({"file_id": ref.file_id} if ref.file_id else {}),
+                        **({"image_url": ref.image_url} if ref.image_url else {}),
+                    }
+                    for ref in inp.images
+                ]
+
+                url = f"{base_url}/images/edits"
+                t0 = time.perf_counter()
+                log_image_http_request(
+                    provider="openai",
+                    method="POST",
+                    url=url,
+                    headers=headers,
+                    body_log=json_dumps_for_log(safe_body_for_log_openai(body)),
+                )
+                r = await client.post(url, headers=headers, json=body)
+            else:
+                body = {
+                    "prompt": inp.prompt,
+                    "n": inp.n,
+                    "response_format": inp.response_format,
+                }
+                if inp.model:
+                    body["model"] = inp.model
+                if inp.size:
+                    body["size"] = inp.size
+
+                url = f"{base_url}/images/generations"
+                t0 = time.perf_counter()
+                log_image_http_request(
+                    provider="openai",
+                    method="POST",
+                    url=url,
+                    headers=headers,
+                    body_log=json_dumps_for_log(safe_body_for_log_openai(body)),
+                )
+                r = await client.post(url, headers=headers, json=body)
+
+            dt_ms = int((time.perf_counter() - t0) * 1000)
+            resp_text = ""
+            try:
+                resp_text = r.text or ""
+            except Exception:  # noqa: BLE001
+                resp_text = ""
+            log_image_http_response(
+                provider="openai",
+                status_code=r.status_code,
+                elapsed_ms=dt_ms,
+                resp_headers=dict(r.headers),
+                resp_text=resp_text,
+            )
+
+            r.raise_for_status()
+            data = r.json()
+
+        return _parse_openai_images_payload(data)
+
+
+def _parse_openai_images_payload(data: dict[str, Any]) -> ImageGenerationResult:
+    raw_items = data.get("data") or []
+    images: list[ImageItem] = []
+    for item in raw_items:
+        if not isinstance(item, dict):
+            continue
+        url = item.get("url")
+        b64 = item.get("b64_json")
+        if not url and not b64:
+            continue
+        images.append(ImageItem(url=url, b64_json=b64))
+
+    if not images:
+        raise RuntimeError(f"OpenAI images response has no usable data: {data!r}")
+
+    return ImageGenerationResult(
+        images=images,
+        provider="openai",
+        provider_task_id=None,
+        status=str(data.get("status") or "succeeded"),
+    )

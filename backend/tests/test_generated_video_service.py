@@ -7,7 +7,7 @@ from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.db import Base
-from app.models.llm import Model, ModelCategoryKey, ModelSettings, Provider
+from app.models.llm import Model, ModelCategoryKey, ModelSettings, Provider, ProviderStatus
 from app.models.studio import (
     CameraAngle,
     CameraMovement,
@@ -25,10 +25,11 @@ from app.models.studio import (
 from app.services.film.generated_video import (
     build_run_args,
     preview_prompt_and_images,
-    provider_key_from_db_name,
     resolve_default_video_model,
     validate_images_count,
 )
+from app.bootstrap import bootstrap_all_registries
+from app.services.llm import resolve_provider_key_from_name
 from app.services.studio import get_shot_video_readiness
 
 
@@ -75,10 +76,11 @@ async def test_validate_images_count_rejects_wrong_count() -> None:
     assert "requires exactly 2 images" in exc_info.value.detail
 
 
-def test_provider_key_from_db_name_supports_known_aliases() -> None:
-    assert provider_key_from_db_name("OpenAI") == "openai"
-    assert provider_key_from_db_name("火山引擎") == "volcengine"
-    assert provider_key_from_db_name("Doubao Video") == "volcengine"
+def test_resolve_provider_key_from_name_supports_known_aliases() -> None:
+    bootstrap_all_registries()
+    assert resolve_provider_key_from_name("OpenAI") == "openai"
+    assert resolve_provider_key_from_name("火山引擎") == "volcengine"
+    assert resolve_provider_key_from_name("Doubao Video") == "volcengine"
 
 
 @pytest.mark.asyncio
@@ -213,6 +215,38 @@ async def test_build_run_args_uses_prompt_pack_when_prompt_missing(monkeypatch: 
 
         assert "镜头标题：镜头一" in run_args["input"]["prompt"]
         assert run_args["prompt_preview"]["shot_id"] == "s1"
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_build_run_args_rejects_disabled_provider() -> None:
+    db, engine = await _build_session()
+    async with db:
+        await _seed_shot_graph(db)
+        provider = Provider(
+            id="p1",
+            name="OpenAI",
+            base_url="https://api.openai.com/v1",
+            api_key="k",
+            status=ProviderStatus.disabled,
+        )
+        model = Model(id="m_video", name="sora-mini", category=ModelCategoryKey.video, provider_id="p1")
+        settings = ModelSettings(id=1, default_video_model_id="m_video")
+        db.add_all([provider, model, settings])
+        await db.commit()
+
+        with pytest.raises(HTTPException) as exc_info:
+            await build_run_args(
+                db,
+                shot_id="s1",
+                reference_mode="text_only",
+                prompt="最终视频提示词",
+                images=[],
+                size=None,
+            )
+
+        assert exc_info.value.status_code == 503
+        assert "Provider is disabled" in str(exc_info.value.detail)
     await engine.dispose()
 
 

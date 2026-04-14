@@ -19,5 +19,6 @@ export type ShotFramePromptRenderRequest = {
     /**
      * 参考资产条目列表（可多张，顺序有效）。后端会使用 item.file_id 作为参考图；无效条目会被跳过。
      */
-    images: Array<ShotLinkedAssetItem>;
+    images?: Array<ShotLinkedAssetItem>;
 };
+

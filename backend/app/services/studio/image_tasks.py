@@ -14,22 +14,8 @@ from app.core import storage
 from app.core.tasks import ProviderConfig
 from app.models.llm import Model, ModelCategoryKey
 from app.models.studio import AssetViewAngle, FileItem, PromptCategory, PromptTemplate, ShotFrameType
-from app.services.common import entity_not_found
-from app.services.llm import get_model_by_category, get_provider_by_id_or_obj
-
-
-def provider_key_from_db_name(name: str) -> str:
-    """将 Provider.name 映射为任务层 ProviderKey（openai | volcengine）。"""
-    n = (name or "").strip()
-    n_lower = n.lower()
-    if n_lower == "openai":
-        return "openai"
-    if n == "火山引擎" or "volc" in n_lower or "doubao" in n_lower or "bytedance" in n_lower:
-        return "volcengine"
-    raise HTTPException(
-        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        detail=f"Unsupported provider name: {name!r}. Expected: openai, 火山引擎.",
-    )
+from app.services.llm import get_model_by_category
+from app.services.llm.provider_resolver import resolve_provider_config
 
 
 async def resolve_image_model(db: AsyncSession, model_id: str | None) -> Model:
@@ -63,34 +49,16 @@ async def resolve_image_model(db: AsyncSession, model_id: str | None) -> Model:
 
 async def load_provider_config(db: AsyncSession, provider_id: str) -> ProviderConfig:
     """根据 provider_id 从 DB 解析 ProviderConfig。"""
-    try:
-        provider = await get_provider_by_id_or_obj(db, provider_id)
-    except HTTPException as e:
-        if e.status_code == status.HTTP_404_NOT_FOUND:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"{entity_not_found('Provider')} for provider_id={provider_id}",
-            ) from e
-        raise
-
-    try:
-        provider_key = provider_key_from_db_name(provider.name)
-    except HTTPException as e:
-        if e.status_code == status.HTTP_503_SERVICE_UNAVAILABLE and (provider.name or "").strip() == "阿里百炼":
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="该供应商仅适用于文本生成，不支持图片生成（name=阿里百炼）",
-            ) from e
-        raise
-
-    api_key = (provider.api_key or "").strip()
-    if not api_key:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Provider api_key is empty for provider_id={provider.id}",
-        )
-    base_url = (provider.base_url or "").strip() or None
-    return ProviderConfig(provider=provider_key, api_key=api_key, base_url=base_url)  # type: ignore[arg-type]
+    resolved = await resolve_provider_config(
+        db,
+        provider_id=provider_id,
+        category=ModelCategoryKey.image,
+    )
+    return ProviderConfig(
+        provider=resolved.provider_key,  # type: ignore[arg-type]
+        api_key=resolved.api_key,
+        base_url=resolved.base_url,
+    )
 
 
 def prompt_from_description(description: str, *, not_found_msg: str) -> str:

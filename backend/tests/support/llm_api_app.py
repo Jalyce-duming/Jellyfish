@@ -1,20 +1,20 @@
-"""FastAPI 应用入口。"""
+"""仅挂载 LLM 路由的 FastAPI 应用，避免在轻量测试环境中导入完整 app（含 Celery/film 等）。"""
+
+from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.v1 import router as api_v1_router
+from app.api.v1.routes import llm
 from app.bootstrap import bootstrap_all_registries
 from app.config import settings
 from app.schemas.common import ApiResponse
 
 
 def _error_message(detail: object) -> str:
-    """将异常 detail 转为前端可读的 message。"""
     if isinstance(detail, str):
         return detail
     if isinstance(detail, list):
@@ -31,9 +31,6 @@ def _error_message(detail: object) -> str:
 
 
 async def http_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    """HTTP 异常统一为 { code, message, data: null }。"""
-    from fastapi import HTTPException
-
     if isinstance(exc, HTTPException):
         code = exc.status_code
         message = _error_message(exc.detail)
@@ -45,7 +42,6 @@ async def http_exception_handler(request: Request, exc: Exception) -> JSONRespon
 
 
 async def validation_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    """422 校验异常统一为 { code: 422, message, data: null }。"""
     assert isinstance(exc, RequestValidationError)
     message = _error_message(exc.errors())
     body = ApiResponse[None](code=422, message=message, data=None, meta=None).model_dump()
@@ -53,42 +49,22 @@ async def validation_exception_handler(request: Request, exc: Exception) -> JSON
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
-    """应用生命周期：启动时初始化，关闭时清理。"""
-    # 启动时：供应商注册 + 任务执行器注册（幂等）
+async def _lifespan(app: FastAPI):
     bootstrap_all_registries()
     yield
-    # 关闭时：清理资源
-    pass
 
 
-app = FastAPI(
-    title=settings.app_name,
-    version="0.1.0",
-    lifespan=lifespan,
-    docs_url="/docs",
-    redoc_url="/redoc",
-)
-
-# 统一错误响应格式：{ code, message, data: null }
-app.add_exception_handler(RequestValidationError, validation_exception_handler)
-app.add_exception_handler(HTTPException, http_exception_handler)
-app.add_exception_handler(Exception, http_exception_handler)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.cors_origins_list,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-app.include_router(api_v1_router, prefix=settings.api_v1_prefix)
-# 影视技能路由同时挂到主应用，保证 /api/v1/film 一定可访问
-
-
-@app.get("/health")
-async def health():
-    """健康检查。"""
-    from app.schemas.common import success_response
-    return success_response({"status": "ok"})
+def build_llm_only_app() -> FastAPI:
+    """与主应用相同的错误壳与 /api/v1/llm 前缀，仅不含 film/studio 等路由。"""
+    application = FastAPI(
+        title=settings.app_name,
+        version="0.1.0",
+        lifespan=_lifespan,
+        docs_url=None,
+        redoc_url=None,
+    )
+    application.add_exception_handler(RequestValidationError, validation_exception_handler)
+    application.add_exception_handler(HTTPException, http_exception_handler)
+    application.add_exception_handler(Exception, http_exception_handler)
+    application.include_router(llm.router, prefix=f"{settings.api_v1_prefix}/llm", tags=["llm"])
+    return application

@@ -24,3 +24,4 @@ export type RenderedShotFramePromptRead = {
      */
     mappings?: Array<ShotFramePromptMappingRead>;
 };
+

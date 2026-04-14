@@ -27,3 +27,4 @@ export type ShotFramePromptMappingRead = {
      */
     file_id: string;
 };
+

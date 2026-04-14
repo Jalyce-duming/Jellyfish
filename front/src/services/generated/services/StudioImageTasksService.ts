@@ -206,7 +206,7 @@ export class StudioImageTasksService {
     }
     /**
      * 镜头分镜帧提示词渲染
-     * @returns ApiResponse_RenderedPromptResponse_ Successful Response
+     * @returns ApiResponse_RenderedShotFramePromptRead_ Successful Response
      * @throws ApiError
      */
     public static renderShotFramePromptApiV1StudioImageTasksShotShotIdFrameRenderPromptPost({

@@ -17,11 +17,12 @@ from app.core.tasks import (
     VideoGenerationResult,
     VideoGenerationTask,
 )
-from app.models.llm import Model, ModelCategoryKey, ModelSettings, Provider
+from app.models.llm import Model, ModelCategoryKey, ModelSettings
 from app.models.task_links import GenerationTaskLink
 from app.models.studio import FileItem, Shot, ShotDetail, ShotFrameType
 from app.models.types import FileUsageKind
 from app.services.common import entity_not_found
+from app.services.llm.provider_resolver import resolve_provider_config_by_model
 from app.services.studio.file_usages import sync_usage_from_shot_context
 from app.services.studio.generation.video import (
     REQUIRED_FRAMES_BY_MODE,
@@ -97,19 +98,6 @@ async def preview_prompt_and_images(
     return submission.prompt, submission.images, shot_detail
 
 
-def provider_key_from_db_name(name: str) -> str:
-    n = (name or "").strip()
-    n_lower = n.lower()
-    if n_lower == "openai":
-        return "openai"
-    if n == "火山引擎" or "volc" in n_lower or "doubao" in n_lower or "bytedance" in n_lower:
-        return "volcengine"
-    raise HTTPException(
-        status_code=503,
-        detail=f"Unsupported provider name: {name!r}. Expected: openai, 火山引擎.",
-    )
-
-
 async def resolve_default_video_model(db: AsyncSession) -> Model:
     settings_row = await db.get(ModelSettings, 1)
     model_id = settings_row.default_video_model_id if settings_row else None
@@ -130,21 +118,12 @@ async def resolve_default_video_model(db: AsyncSession) -> Model:
 
 
 async def load_provider_config_by_model(db: AsyncSession, model: Model) -> ProviderConfig:
-    provider = await db.get(Provider, model.provider_id)
-    if provider is None:
-        raise HTTPException(
-            status_code=503,
-            detail=f"Provider not found for model.provider_id={model.provider_id}",
-        )
-    provider_key = provider_key_from_db_name(provider.name)
-    api_key = (provider.api_key or "").strip()
-    if not api_key:
-        raise HTTPException(
-            status_code=503,
-            detail=f"Provider api_key is empty for provider_id={provider.id}",
-        )
-    base_url = (provider.base_url or "").strip() or None
-    return ProviderConfig(provider=provider_key, api_key=api_key, base_url=base_url)  # type: ignore[arg-type]
+    resolved = await resolve_provider_config_by_model(db, model=model)
+    return ProviderConfig(
+        provider=resolved.provider_key,  # type: ignore[arg-type]
+        api_key=resolved.api_key,
+        base_url=resolved.base_url,
+    )
 
 
 async def build_run_args(

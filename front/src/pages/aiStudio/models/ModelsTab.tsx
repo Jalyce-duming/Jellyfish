@@ -41,6 +41,9 @@ import type {
 } from '../../../services/generated'
 import {
   MODEL_CATEGORIES,
+  TABLE_ACTION_BTN_EDIT_CLASS,
+  TABLE_ACTION_BTN_MORE_CLASS,
+  TABLE_ACTION_BTN_TEST_CLASS,
   categoryLabelMap,
   categoryColorMap,
   SORT_OPTIONS,
@@ -261,6 +264,20 @@ export default function ModelsTab() {
     setModelModalOpen(true)
   }
 
+  /** 基于已有模型打开「添加模型」浮窗，预填字段，名称追加「-复制」。 */
+  const openCopyModelModal = (source: ModelRead) => {
+    setModelEditing(null)
+    form.resetFields()
+    form.setFieldsValue({
+      name: `${source.name}-复制`,
+      category: source.category,
+      provider_id: source.provider_id,
+      description: source.description ?? '',
+      params: JSON.stringify(source.params ?? {}, null, 2),
+    })
+    setModelModalOpen(true)
+  }
+
   const modelColumns: TableColumnsType<ModelRead> = [
     {
       title: '名称',
@@ -315,31 +332,69 @@ export default function ModelsTab() {
     {
       title: '操作',
       key: 'action',
-      width: 180,
+      width: 112,
+      fixed: 'right',
+      align: 'center',
       render: (_, record) => (
-        <Space size="small">
-          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openModelModal(record)}>
-            编辑
-          </Button>
-          <Button type="link" size="small" icon={<ThunderboltOutlined />}>
-            测试生成
-          </Button>
+        <Space size={4} className="flex-nowrap justify-center">
+          <Tooltip title="编辑">
+            <Button
+              type="text"
+              size="small"
+              className={TABLE_ACTION_BTN_EDIT_CLASS}
+              icon={<EditOutlined />}
+              onClick={(e) => {
+                e.stopPropagation()
+                openModelModal(record)
+              }}
+            />
+          </Tooltip>
+          <Tooltip title="测试生成">
+            <Button
+              type="text"
+              size="small"
+              className={TABLE_ACTION_BTN_TEST_CLASS}
+              icon={<ThunderboltOutlined />}
+              onClick={(e) => {
+                e.stopPropagation()
+              }}
+            />
+          </Tooltip>
           <Dropdown
             menu={{
               items: [
-                { key: 'copy', label: '复制', icon: <CopyOutlined /> },
+                {
+                  key: 'copy',
+                  label: '复制',
+                  icon: <CopyOutlined />,
+                  onClick: ({ domEvent }) => {
+                    domEvent.stopPropagation()
+                    openCopyModelModal(record)
+                  },
+                },
                 {
                   key: 'delete',
                   label: '删除',
                   danger: true,
                   icon: <DeleteOutlined />,
-                  onClick: () => handleDeleteModel(record),
+                  onClick: ({ domEvent }) => {
+                    domEvent.stopPropagation()
+                    handleDeleteModel(record)
+                  },
                 },
               ],
             }}
             trigger={['click']}
           >
-            <Button type="link" size="small" icon={<MenuOutlined />} />
+            <Tooltip title="更多">
+              <Button
+                type="text"
+                size="small"
+                className={TABLE_ACTION_BTN_MORE_CLASS}
+                icon={<MenuOutlined />}
+                onClick={(e) => e.stopPropagation()}
+              />
+            </Tooltip>
           </Dropdown>
         </Space>
       ),
@@ -451,6 +506,7 @@ export default function ModelsTab() {
                 loading={loading}
                 columns={modelColumns}
                 dataSource={modelList}
+                scroll={{ x: 1024 }}
                 pagination={{ pageSize: 20 }}
                 onRow={(record) => ({
                   onClick: () => {
@@ -495,10 +551,23 @@ export default function ModelsTab() {
                       menu={{
                         items: [
                           {
+                            key: 'copy',
+                            label: '复制',
+                            icon: <CopyOutlined />,
+                            onClick: ({ domEvent }) => {
+                              domEvent.stopPropagation()
+                              openCopyModelModal(m)
+                            },
+                          },
+                          {
                             key: 'delete',
                             label: '删除',
                             danger: true,
-                            onClick: () => handleDeleteModel(m),
+                            icon: <DeleteOutlined />,
+                            onClick: ({ domEvent }) => {
+                              domEvent.stopPropagation()
+                              handleDeleteModel(m)
+                            },
                           },
                         ],
                       }}

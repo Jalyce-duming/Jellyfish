@@ -31,3 +31,16 @@ export function maskUrl(url: string): string {
     return url.slice(0, 20) + '***'
   }
 }
+
+/** 表格操作列图标按钮公共骨架（覆盖 Ant Design 默认尺寸） */
+const TABLE_ACTION_BTN_BASE =
+  '!inline-flex !h-7 !w-7 !min-w-7 !cursor-pointer !items-center !justify-center !rounded-md !border !border-solid !p-0 shadow-sm transition-colors'
+
+/** 编辑：主色蓝，默认可辨认为可操作 */
+export const TABLE_ACTION_BTN_EDIT_CLASS = `${TABLE_ACTION_BTN_BASE} !border-blue-200 !bg-blue-50 !text-blue-600 hover:!border-blue-400 hover:!bg-blue-100 hover:!text-blue-700 active:!bg-blue-200/60`
+
+/** 测试/运行：琥珀色，与编辑区分 */
+export const TABLE_ACTION_BTN_TEST_CLASS = `${TABLE_ACTION_BTN_BASE} !border-amber-200 !bg-amber-50 !text-amber-600 hover:!border-amber-400 hover:!bg-amber-100 hover:!text-amber-700 active:!bg-amber-200/60`
+
+/** 更多：中性灰 */
+export const TABLE_ACTION_BTN_MORE_CLASS = `${TABLE_ACTION_BTN_BASE} !border-slate-200 !bg-slate-50 !text-slate-600 hover:!border-slate-300 hover:!bg-slate-100 hover:!text-slate-800 active:!bg-slate-200/70`

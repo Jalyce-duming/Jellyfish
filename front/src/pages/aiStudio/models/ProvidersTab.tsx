@@ -34,7 +34,14 @@ import {
 } from '@ant-design/icons'
 import { LlmService } from '../../../services/generated/services/LlmService'
 import type { ProviderRead, ProviderStatus, ProviderSupportedRead } from '../../../services/generated'
-import { PROVIDER_STATUS_MAP, SORT_OPTIONS, maskUrl } from './constants'
+import {
+  PROVIDER_STATUS_MAP,
+  SORT_OPTIONS,
+  TABLE_ACTION_BTN_EDIT_CLASS,
+  TABLE_ACTION_BTN_MORE_CLASS,
+  TABLE_ACTION_BTN_TEST_CLASS,
+  maskUrl,
+} from './constants'
 
 export default function ProvidersTab() {
   const [providers, setProviders] = useState<ProviderRead[]>([])
@@ -285,20 +292,35 @@ export default function ProvidersTab() {
     {
       title: '操作',
       key: 'action',
-      width: 200,
+      width: 112,
+      fixed: 'right',
+      align: 'center',
       render: (_, record) => (
-        <Space size="small">
-          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openProviderModal(record)}>
-            编辑
-          </Button>
-          <Button
-            type="link"
-            size="small"
-            icon={<ThunderboltOutlined />}
-            onClick={() => handleTestConnection(record)}
-          >
-            测试连接
-          </Button>
+        <Space size={4} className="flex-nowrap justify-center">
+          <Tooltip title="编辑">
+            <Button
+              type="text"
+              size="small"
+              className={TABLE_ACTION_BTN_EDIT_CLASS}
+              icon={<EditOutlined />}
+              onClick={(e) => {
+                e.stopPropagation()
+                openProviderModal(record)
+              }}
+            />
+          </Tooltip>
+          <Tooltip title="测试连接">
+            <Button
+              type="text"
+              size="small"
+              className={TABLE_ACTION_BTN_TEST_CLASS}
+              icon={<ThunderboltOutlined />}
+              onClick={(e) => {
+                e.stopPropagation()
+                void handleTestConnection(record)
+              }}
+            />
+          </Tooltip>
           <Dropdown
             menu={{
               items: [
@@ -310,13 +332,24 @@ export default function ProvidersTab() {
                   label: '删除',
                   danger: true,
                   icon: <DeleteOutlined />,
-                  onClick: () => handleDeleteProvider(record),
+                  onClick: ({ domEvent }) => {
+                    domEvent.stopPropagation()
+                    handleDeleteProvider(record)
+                  },
                 },
               ],
             }}
             trigger={['click']}
           >
-            <Button type="link" size="small" icon={<MenuOutlined />} />
+            <Tooltip title="更多">
+              <Button
+                type="text"
+                size="small"
+                className={TABLE_ACTION_BTN_MORE_CLASS}
+                icon={<MenuOutlined />}
+                onClick={(e) => e.stopPropagation()}
+              />
+            </Tooltip>
           </Dropdown>
         </Space>
       ),
@@ -421,6 +454,7 @@ export default function ProvidersTab() {
                 loading={loading}
                 columns={providerColumns}
                 dataSource={providerList}
+                scroll={{ x: 1180 }}
                 pagination={{ pageSize: 20 }}
                 onRow={(record) => ({
                   onClick: () => {

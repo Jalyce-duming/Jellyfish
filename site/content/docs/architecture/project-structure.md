@@ -35,6 +35,12 @@ jellyfish/
 - 管理数据库模型、文件存储与任务状态
 - 通过 `chains / services / core.tasks` 接入 AI 能力
 
+## 生成能力分层约束
+
+- 通用生成契约（输入/输出 DTO、供应商配置等）统一放在 `app/core/contracts`。
+- `app/core/tasks` 仅保留任务封装、分派与执行编排，不定义跨层 DTO。
+- `app/core/integrations` 仅实现供应商协议适配，依赖 `contracts`，不依赖 `tasks` 类型模块。
+
 ## 站点职责
 
 - 官网首页与产品介绍

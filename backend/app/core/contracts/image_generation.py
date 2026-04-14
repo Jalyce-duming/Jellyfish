@@ -1,4 +1,4 @@
-"""图片生成任务：输入输出模型（供 tasks 与 integrations 共用，避免循环导入）。"""
+"""图片生成共享输入输出契约。"""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.core.tasks.provider_types import ProviderKey
+from app.core.contracts.provider import ProviderKey
 
 ResponseFormat = Literal["url", "b64_json"]
 

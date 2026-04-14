@@ -5,8 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 from app.core.integrations.volcengine.video_payload import build_create_task_body
-from app.core.tasks.provider_types import ProviderConfig
-from app.core.tasks.video_generation_types import VideoGenerationInput
+from app.core.contracts.provider import ProviderConfig
+from app.core.contracts.video_generation import VideoGenerationInput
 
 
 class VolcengineVideoApiAdapter:

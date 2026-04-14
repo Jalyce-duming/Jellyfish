@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import storage
-from app.core.tasks import ProviderConfig
+from app.core.contracts.provider import ProviderConfig
 from app.models.llm import Model, ModelCategoryKey
 from app.models.studio import AssetViewAngle, FileItem, PromptCategory, PromptTemplate, ShotFrameType
 from app.services.llm import get_model_by_category

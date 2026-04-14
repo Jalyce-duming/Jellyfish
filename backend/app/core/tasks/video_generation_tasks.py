@@ -11,9 +11,9 @@ from typing import Any, AsyncIterator
 
 from app.core.integrations.openai.video import OpenAIVideoApiAdapter
 from app.core.integrations.volcengine.video import VolcengineVideoApiAdapter
-from app.core.tasks.provider_types import ProviderConfig
+from app.core.contracts.provider import ProviderConfig
 from app.core.tasks.registry import resolve_task_adapter
-from app.core.tasks.video_generation_types import VideoGenerationInput, VideoGenerationResult
+from app.core.contracts.video_generation import VideoGenerationInput, VideoGenerationResult
 from app.core.task_manager.types import BaseTask
 
 __all__ = [

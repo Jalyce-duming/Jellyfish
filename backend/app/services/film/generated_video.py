@@ -11,12 +11,9 @@ from app.core import storage
 from app.core.db import async_session_maker
 from app.core.task_manager import SqlAlchemyTaskStore
 from app.core.task_manager.types import TaskStatus
-from app.core.tasks import (
-    ProviderConfig,
-    VideoGenerationInput,
-    VideoGenerationResult,
-    VideoGenerationTask,
-)
+from app.core.contracts.provider import ProviderConfig
+from app.core.contracts.video_generation import VideoGenerationInput, VideoGenerationResult
+from app.core.tasks import VideoGenerationTask
 from app.models.llm import Model, ModelCategoryKey, ModelSettings
 from app.models.task_links import GenerationTaskLink
 from app.models.studio import FileItem, Shot, ShotDetail, ShotFrameType

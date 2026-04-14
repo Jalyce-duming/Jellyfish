@@ -17,6 +17,9 @@ alwaysApply: true
 - 后端严格区分层职责：
   - `api` 层负责收参、鉴权、响应组织。
   - `service` 层负责业务逻辑、状态流转、数据编排。
+- 生成能力相关的通用契约（输入/输出 DTO、供应商配置等）统一放在 `app/core/contracts`：
+  - `tasks` 仅保留任务封装、分派与执行编排，不定义跨层 DTO。
+  - `integrations` 仅依赖 `contracts`，不依赖 `tasks` 类型模块。
 
 ## 变更同步要求
 

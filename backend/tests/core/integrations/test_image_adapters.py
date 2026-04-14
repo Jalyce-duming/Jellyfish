@@ -9,8 +9,8 @@ import pytest
 
 from app.core.integrations.openai.images import OpenAIImageApiAdapter
 from app.core.integrations.volcengine.images import VolcengineImageApiAdapter
-from app.core.tasks.image_generation_types import ImageGenerationInput, InputImageRef
-from app.core.tasks.provider_types import ProviderConfig
+from app.core.contracts.image_generation import ImageGenerationInput, InputImageRef
+from app.core.contracts.provider import ProviderConfig
 
 
 def _patch_httpx_client(monkeypatch: pytest.MonkeyPatch, transport: httpx.MockTransport) -> None:

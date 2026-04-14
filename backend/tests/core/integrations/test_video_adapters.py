@@ -9,8 +9,8 @@ import pytest
 
 from app.core.integrations.openai.video import OpenAIVideoApiAdapter
 from app.core.integrations.volcengine.video import VolcengineVideoApiAdapter
-from app.core.tasks.provider_types import ProviderConfig
-from app.core.tasks.video_generation_types import VideoGenerationInput
+from app.core.contracts.provider import ProviderConfig
+from app.core.contracts.video_generation import VideoGenerationInput
 
 
 def _patch_httpx_client(monkeypatch: pytest.MonkeyPatch, transport: httpx.MockTransport) -> None:

@@ -1,4 +1,4 @@
-"""任务执行层供应商公共类型。"""
+"""生成能力共享的供应商类型契约。"""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ ProviderKey = Literal["openai", "volcengine"]
 
 @dataclass(frozen=True, slots=True)
 class ProviderConfig:
-    """任务执行时所需的供应商配置。"""
+    """执行生成任务时需要的供应商配置。"""
 
     provider: ProviderKey
     api_key: str

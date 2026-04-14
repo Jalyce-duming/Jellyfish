@@ -10,14 +10,14 @@ from typing import Any, AsyncIterator
 
 from app.core.integrations.openai.images import OpenAIImageApiAdapter
 from app.core.integrations.volcengine.images import VolcengineImageApiAdapter
-from app.core.tasks.image_generation_types import (
+from app.core.contracts.image_generation import (
     ImageGenerationInput,
     ImageGenerationResult,
     ImageItem,
     InputImageRef,
     ResponseFormat,
 )
-from app.core.tasks.provider_types import ProviderConfig
+from app.core.contracts.provider import ProviderConfig
 from app.core.tasks.registry import resolve_task_adapter
 from app.core.task_manager.types import BaseTask
 

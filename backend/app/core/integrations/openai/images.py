@@ -11,12 +11,12 @@ from app.core.integrations.http_logging import (
     log_image_http_response,
     safe_body_for_log_openai,
 )
-from app.core.tasks.image_generation_types import (
+from app.core.contracts.image_generation import (
     ImageGenerationInput,
     ImageGenerationResult,
     ImageItem,
 )
-from app.core.tasks.provider_types import ProviderConfig
+from app.core.contracts.provider import ProviderConfig
 
 
 class OpenAIImageApiAdapter:

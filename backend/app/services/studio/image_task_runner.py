@@ -6,7 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db import async_session_maker
 from app.core.task_manager import DeliveryMode, SqlAlchemyTaskStore, TaskManager
 from app.core.task_manager.types import TaskStatus
-from app.core.tasks import ImageGenerationInput, ImageGenerationResult, ImageGenerationTask, ProviderConfig
+from app.core.contracts.image_generation import ImageGenerationInput, ImageGenerationResult
+from app.core.contracts.provider import ProviderConfig
+from app.core.tasks import ImageGenerationTask
 from app.models.studio import (
     ActorImage,
     AssetQualityLevel,

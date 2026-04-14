@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.core.integrations.openai.video_payload import to_image_data_url
-from app.core.tasks.video_generation_types import VideoGenerationInput, _strip_optional_b64
+from app.core.contracts.video_generation import VideoGenerationInput, _strip_optional_b64
 
 
 def volcengine_ratio(size: str | None) -> str:
